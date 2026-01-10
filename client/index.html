@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Cinema Booking - Đặt vé xem phim Real-time</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <!-- Header -->
+  <header>
+    <div class="container">
+      <h1>🎬 Cinema Booking System</h1>
+      <p class="subtitle">Đặt vé xem phim Real-time với WebSocket</p>
+    </div>
+  </header>
+
+  <!-- Main Content -->
+  <main class="container">
+    <!-- User Info Section -->
+    <section id="user-section" class="card">
+      <h2>👤 Thông tin người dùng</h2>
+      <div id="user-form">
+        <input type="text" id="user-name" placeholder="Nhập tên của bạn" required>
+        <button onclick="setUser()">Bắt đầu</button>
+      </div>
+      <div id="user-info" style="display: none;">
+        <p>Xin chào, <strong id="display-name"></strong>!</p>
+        <p>User ID: <span id="display-id"></span></p>
+      </div>
+    </section>
+
+    <!-- Connection Status -->
+    <div id="connection-status" class="status-bar">
+      <span id="status-indicator">⚪</span>
+      <span id="status-text">Chưa kết nối</span>
+      <span id="client-count"></span>
+    </div>
+
+    <!-- Movies List Section -->
+    <section id="movies-section" class="card" style="display: none;">
+      <h2>🎥 Danh sách phim</h2>
+      <div id="movies-list" class="movies-grid"></div>
+    </section>
+
+    <!-- Seat Selection Section -->
+    <section id="seats-section" class="card" style="display: none;">
+      <div class="seat-header">
+        <div>
+          <h2 id="selected-movie-title"></h2>
+          <p id="selected-movie-info"></p>
+        </div>
+        <button onclick="backToMovies()" class="btn-secondary">← Quay lại</button>
+      </div>
+      
+      <div class="screen">MÀN HÌNH</div>
+      
+      <div id="seats-grid" class="seats-container"></div>
+      
+      <div class="legend">
+        <div class="legend-item">
+          <div class="seat available"></div>
+          <span>Trống</span>
+        </div>
+        <div class="legend-item">
+          <div class="seat selected"></div>
+          <span>Đang chọn (bạn)</span>
+        </div>
+        <div class="legend-item">
+          <div class="seat selected-other"></div>
+          <span>Đang chọn (người khác)</span>
+        </div>
+        <div class="legend-item">
+          <div class="seat booked"></div>
+          <span>Đã đặt</span>
+        </div>
+      </div>
+      
+      <div id="booking-summary" style="display: none;">
+        <h3>📝 Thông tin đặt vé</h3>
+        <p>Ghế đã chọn: <strong id="selected-seats-list"></strong></p>
+        <p>Tổng tiền: <strong id="total-price"></strong> VNĐ</p>
+        <button onclick="confirmBooking()" class="btn-primary">Xác nhận đặt vé</button>
+      </div>
+    </section>
+
+    <!-- Real-time Activity Log -->
+    <section id="activity-section" class="card">
+      <h2>📊 Hoạt động Real-time</h2>
+      <div id="activity-log" class="activity-log"></div>
+    </section>
+  </main>
+
+  <!-- Footer -->
+  <footer>
+    <div class="container">
+      <p>🎓 Dự án môn Lập trình mạng</p>
+      <p>Khái niệm: Client-Server | HTTP REST | WebSocket | Real-time Sync</p>
+    </div>
+  </footer>
+
+  <!-- Socket.IO Client Library -->
+  <script src="/socket.io/socket.io.js"></script>
+  <!-- Main App Script -->
+  <script src="app.js"></script>
+</body>
+</html>
