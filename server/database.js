@@ -1,0 +1,350 @@
+/**
+ * DATABASE SETUP - SQLite
+ * 
+ * Kiến thức lập trình mạng:
+ * - Database persistence: Lưu trữ dữ liệu bền vững thay vì in-memory
+ * - Transaction: Đảm bảo tính toàn vẹn dữ liệu khi nhiều client truy cập
+ * - Indexing: Tối ưu hóa query performance
+ */
+
+const sqlite3 = require('sqlite3').verbose();
+const path = require('path');
+const bcrypt = require('bcryptjs');
+
+const dbPath = path.join(__dirname, 'cinema.db');
+const db = new sqlite3.Database(dbPath, (err) => {
+  if (err) {
+    console.error('❌ Database connection error:', err.message);
+  } else {
+    console.log('📊 Database file:', dbPath);
+  }
+});
+
+// Enable foreign keys
+db.run('PRAGMA foreign_keys = ON');
+
+// ============================================
+// HELPER: Promise wrapper for db
+// ============================================
+
+function dbRun(sql, params = []) {
+  return new Promise((resolve, reject) => {
+    db.run(sql, params, function(err) {
+      if (err) reject(err);
+      else resolve({ lastID: this.lastID, changes: this.changes });
+    });
+  });
+}
+
+function dbAll(sql, params = []) {
+  return new Promise((resolve, reject) => {
+    db.all(sql, params, (err, rows) => {
+      if (err) reject(err);
+      else resolve(rows || []);
+    });
+  });
+}
+
+function dbGet(sql, params = []) {
+  return new Promise((resolve, reject) => {
+    db.get(sql, params, (err, row) => {
+      if (err) reject(err);
+      else resolve(row);
+    });
+  });
+}
+
+// ============================================
+// CREATE TABLES (Async)
+// ============================================
+
+const initializeDatabase = async () => {
+  try {
+    // USERS TABLE
+    await dbRun(`
+      CREATE TABLE IF NOT EXISTS users (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        username TEXT UNIQUE NOT NULL,
+        email TEXT UNIQUE NOT NULL,
+        password TEXT NOT NULL,
+        role TEXT DEFAULT 'user',
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
+    // MOVIES TABLE
+    await dbRun(`
+      CREATE TABLE IF NOT EXISTS movies (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        title TEXT NOT NULL,
+        description TEXT,
+        time TEXT NOT NULL,
+        date TEXT NOT NULL,
+        theater TEXT NOT NULL,
+        price INTEGER NOT NULL,
+        poster_url TEXT,
+        uploaded_by INTEGER NOT NULL,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (uploaded_by) REFERENCES users(id)
+      )
+    `);
+
+    // SEATS TABLE
+    await dbRun(`
+      CREATE TABLE IF NOT EXISTS seats (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        movie_id INTEGER NOT NULL,
+        seat_id TEXT NOT NULL,
+        status TEXT DEFAULT 'available',
+        user_id INTEGER,
+        reserved_until DATETIME,
+        FOREIGN KEY (movie_id) REFERENCES movies(id) ON DELETE CASCADE,
+        FOREIGN KEY (user_id) REFERENCES users(id),
+        UNIQUE(movie_id, seat_id)
+      )
+    `);
+
+    // BOOKINGS TABLE
+    await dbRun(`
+      CREATE TABLE IF NOT EXISTS bookings (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        movie_id INTEGER NOT NULL,
+        user_id INTEGER NOT NULL,
+        seats TEXT NOT NULL,
+        total_price INTEGER NOT NULL,
+        status TEXT DEFAULT 'pending',
+        booked_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (movie_id) REFERENCES movies(id),
+        FOREIGN KEY (user_id) REFERENCES users(id)
+      )
+    `);
+
+    // CREATE INDEXES
+    await dbRun(`CREATE INDEX IF NOT EXISTS idx_bookings_user ON bookings(user_id)`);
+    await dbRun(`CREATE INDEX IF NOT EXISTS idx_bookings_movie ON bookings(movie_id)`);
+    await dbRun(`CREATE INDEX IF NOT EXISTS idx_seats_movie ON seats(movie_id)`);
+    await dbRun(`CREATE INDEX IF NOT EXISTS idx_movies_date ON movies(date)`);
+
+    console.log('✅ Database tables initialized');
+
+    // Seed test data
+    await seedDatabase();
+  } catch (error) {
+    console.error('❌ Database initialization error:', error.message);
+  }
+};
+
+// ============================================
+// HELPER FUNCTIONS
+// ============================================
+
+function hashPassword(password) {
+  return bcrypt.hashSync(password, 10);
+}
+
+function verifyPassword(password, hash) {
+  return bcrypt.compareSync(password, hash);
+}
+
+// ============================================
+// USER FUNCTIONS
+// ============================================
+
+async function createUser(username, email, password, role = 'user') {
+  try {
+    const hashedPassword = hashPassword(password);
+    const result = await dbRun(
+      `INSERT INTO users (username, email, password, role) VALUES (?, ?, ?, ?)`,
+      [username, email, hashedPassword, role]
+    );
+    return { id: result.lastID, username, email, role };
+  } catch (error) {
+    if (error.message.includes('UNIQUE')) {
+      throw new Error('Username hoặc email đã tồn tại');
+    }
+    throw error;
+  }
+}
+
+async function getUserByUsername(username) {
+  return await dbGet(`SELECT * FROM users WHERE username = ?`, [username]);
+}
+
+async function getUserById(id) {
+  return await dbGet(`SELECT id, username, email, role, created_at FROM users WHERE id = ?`, [id]);
+}
+
+// ============================================
+// MOVIE FUNCTIONS
+// ============================================
+
+async function createMovie(data) {
+  const {
+    title, description, time, date, theater, price, poster_url, uploaded_by
+  } = data;
+  
+  const result = await dbRun(
+    `INSERT INTO movies (title, description, time, date, theater, price, poster_url, uploaded_by)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    [title, description, time, date, theater, price, poster_url, uploaded_by]
+  );
+  
+  return result.lastID;
+}
+
+async function getAllMovies() {
+  return await dbAll(`
+    SELECT m.*, u.username as uploaded_by_name
+    FROM movies m
+    LEFT JOIN users u ON m.uploaded_by = u.id
+    ORDER BY m.date, m.time
+  `);
+}
+
+async function getMovieById(movieId) {
+  return await dbGet(`
+    SELECT m.*, u.username as uploaded_by_name
+    FROM movies m
+    LEFT JOIN users u ON m.uploaded_by = u.id
+    WHERE m.id = ?
+  `, [movieId]);
+}
+
+// ============================================
+// SEAT FUNCTIONS
+// ============================================
+
+async function initializeSeatsForMovie(movieId) {
+  const seats = [];
+  for (let row = 1; row <= 10; row++) {
+    for (let col = 1; col <= 10; col++) {
+      const seatId = `${String.fromCharCode(64 + row)}${col}`;
+      seats.push([movieId, seatId]);
+    }
+  }
+
+  for (const [mid, sid] of seats) {
+    try {
+      await dbRun(
+        `INSERT INTO seats (movie_id, seat_id, status) VALUES (?, ?, 'available')`,
+        [mid, sid]
+      );
+    } catch (error) {
+      // Ignore if already exists
+    }
+  }
+}
+
+async function getSeatsByMovie(movieId) {
+  return await dbAll(`SELECT * FROM seats WHERE movie_id = ? ORDER BY seat_id`, [movieId]);
+}
+
+async function updateSeatStatus(movieId, seatId, status, userId = null) {
+  const reserved_until = status === 'selected' ? new Date(Date.now() + 5 * 60000).toISOString() : null;
+  
+  await dbRun(
+    `UPDATE seats SET status = ?, user_id = ?, reserved_until = ? WHERE movie_id = ? AND seat_id = ?`,
+    [status, userId, reserved_until, movieId, seatId]
+  );
+}
+
+async function releaseExpiredReservations() {
+  await dbRun(`
+    UPDATE seats
+    SET status = 'available', user_id = NULL, reserved_until = NULL
+    WHERE status = 'selected' AND reserved_until < CURRENT_TIMESTAMP
+  `);
+}
+
+// ============================================
+// BOOKING FUNCTIONS
+// ============================================
+
+async function createBooking(movieId, userId, seats, totalPrice) {
+  const seatsJson = JSON.stringify(seats);
+  const result = await dbRun(
+    `INSERT INTO bookings (movie_id, user_id, seats, total_price, status)
+     VALUES (?, ?, ?, ?, 'confirmed')`,
+    [movieId, userId, seatsJson, totalPrice]
+  );
+  
+  return result.lastID;
+}
+
+async function getUserBookings(userId) {
+  return await dbAll(`
+    SELECT b.*, m.title, m.date, m.time
+    FROM bookings b
+    LEFT JOIN movies m ON b.movie_id = m.id
+    WHERE b.user_id = ?
+    ORDER BY b.booked_at DESC
+  `, [userId]);
+}
+
+async function getAllBookings() {
+  return await dbAll(`
+    SELECT b.*, m.title, u.username
+    FROM bookings b
+    LEFT JOIN movies m ON b.movie_id = m.id
+    LEFT JOIN users u ON b.user_id = u.id
+    ORDER BY b.booked_at DESC
+  `);
+}
+
+// ============================================
+// SEED DATA
+// ============================================
+
+async function seedDatabase() {
+  try {
+    const result = await dbGet('SELECT COUNT(*) as count FROM users');
+    if (result.count === 0) {
+      console.log('📝 Seeding test data...');
+      
+      await createUser('admin', 'admin@cinema.com', 'admin123', 'admin');
+      console.log('✅ Admin created: admin / admin123');
+      
+      await createUser('user1', 'user1@cinema.com', 'user123', 'user');
+      console.log('✅ User created: user1 / user123');
+    }
+  } catch (error) {
+    console.error('❌ Seed error:', error.message);
+  }
+}
+
+// ============================================
+// INITIALIZE ON REQUIRE
+// ============================================
+
+// Delay initialization to allow module loading
+setTimeout(() => {
+  initializeDatabase();
+}, 100);
+
+// ============================================
+// EXPORT
+// ============================================
+
+module.exports = {
+  db,
+  // User functions
+  createUser,
+  getUserByUsername,
+  getUserById,
+  hashPassword,
+  verifyPassword,
+  // Movie functions
+  createMovie,
+  getAllMovies,
+  getMovieById,
+  // Seat functions
+  initializeSeatsForMovie,
+  getSeatsByMovie,
+  updateSeatStatus,
+  releaseExpiredReservations,
+  // Booking functions
+  createBooking,
+  getUserBookings,
+  getAllBookings
+};
