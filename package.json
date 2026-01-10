@@ -1,0 +1,27 @@
+{
+  "name": "cinema-realtime",
+  "version": "1.0.0",
+  "description": "Real-time cinema ticket booking system - Network Programming Project",
+  "main": "server/server.js",
+  "scripts": {
+    "start": "node server/server.js",
+    "dev": "nodemon server/server.js"
+  },
+  "keywords": [
+    "websocket",
+    "realtime",
+    "cinema",
+    "booking",
+    "network-programming"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "express": "^4.18.2",
+    "socket.io": "^4.6.1",
+    "cors": "^2.8.5"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.1"
+  }
+}
