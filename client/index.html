@@ -1,215 +1,348 @@
 <!DOCTYPE html>
 <html lang="vi">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Cinema Booking - Đặt vé xem phim Real-time</title>
-  <link rel="stylesheet" href="styles.css">
-</head>
-<body>
-  <!-- Header -->
-  <header>
-    <div class="container">
-      <div class="header-content">
-        <div>
-          <h1>🎬 Cinema Booking System</h1>
-          <p class="subtitle">Đặt vé xem phim Real-time + Database + Authentication</p>
-        </div>
-        <div id="user-section" style="display: none;" class="user-header">
-          <div class="user-info">
-            <span id="display-username"></span>
-            <span id="display-role"></span>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Cinema Booking - Đặt vé xem phim Real-time</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <!-- Header -->
+    <header>
+      <div class="container">
+        <div class="header-content">
+          <div>
+            <h1>🎬 Cinema Booking System</h1>
+            <p class="subtitle">
+              Đặt vé xem phim Real-time + Database + Authentication
+            </p>
           </div>
-          <button onclick="logout()" class="btn-logout">Đăng xuất</button>
+          <div id="user-section" style="display: none" class="user-header">
+            <div class="user-info">
+              <span id="display-username"></span>
+              <span id="display-role"></span>
+            </div>
+            <button onclick="logout()" class="btn-logout">Đăng xuất</button>
+          </div>
         </div>
       </div>
-    </div>
-  </header>
+    </header>
 
-  <!-- Main Content -->
-  <main class="container">
-    <!-- ===== AUTHENTICATION SECTION ===== -->
-    <section id="auth-section" class="card" style="display: none;">
-      <div class="auth-container">
-        <!-- Tab Navigation -->
-        <div class="auth-tabs">
-          <button class="auth-tab active" onclick="switchAuthTab('login')">Đăng nhập</button>
-          <button class="auth-tab" onclick="switchAuthTab('register')">Đăng ký</button>
+    <!-- Main Content -->
+    <main class="container">
+      <!-- ===== AUTHENTICATION SECTION ===== -->
+      <section id="auth-section" class="card" style="display: none">
+        <div class="auth-container">
+          <!-- Tab Navigation -->
+          <div class="auth-tabs">
+            <button class="auth-tab active" onclick="switchAuthTab('login')">
+              Đăng nhập
+            </button>
+            <button class="auth-tab" onclick="switchAuthTab('register')">
+              Đăng ký
+            </button>
+          </div>
+
+          <!-- Login Tab -->
+          <div id="login-tab" class="auth-form active">
+            <h2>Đăng nhập tài khoản</h2>
+            <div class="form-group">
+              <label>Tên đăng nhập:</label>
+              <input
+                type="text"
+                id="login-username"
+                placeholder="admin hoặc user1"
+              />
+            </div>
+            <div class="form-group">
+              <label>Mật khẩu:</label>
+              <input
+                type="password"
+                id="login-password"
+                placeholder="admin123 hoặc user123"
+              />
+            </div>
+            <button onclick="login()" class="btn-primary">Đăng nhập</button>
+            <p class="hint">
+              💡 Tài khoản mặc định: admin/admin123 hoặc user1/user123
+            </p>
+          </div>
+
+          <!-- Register Tab -->
+          <div id="register-tab" class="auth-form">
+            <h2>Tạo tài khoản mới</h2>
+            <div class="form-group">
+              <label>Tên đăng nhập:</label>
+              <input
+                type="text"
+                id="register-username"
+                placeholder="Nhập tên đăng nhập"
+              />
+            </div>
+            <div class="form-group">
+              <label>Email:</label>
+              <input
+                type="email"
+                id="register-email"
+                placeholder="Nhập email"
+              />
+            </div>
+            <div class="form-group">
+              <label>Mật khẩu (tối thiểu 6 ký tự):</label>
+              <input
+                type="password"
+                id="register-password"
+                placeholder="Nhập mật khẩu"
+              />
+            </div>
+            <button onclick="register()" class="btn-primary">Đăng ký</button>
+          </div>
         </div>
+      </section>
 
-        <!-- Login Tab -->
-        <div id="login-tab" class="auth-form active">
-          <h2>Đăng nhập tài khoản</h2>
+      <!-- ===== ADMIN UPLOAD SECTION ===== -->
+      <section id="admin-section" class="card" style="display: none">
+        <h2>👨‍💼 Quản lý phim (Admin)</h2>
+        <div class="admin-form">
+          <h3>Upload phim mới</h3>
           <div class="form-group">
-            <label>Tên đăng nhập:</label>
-            <input type="text" id="login-username" placeholder="admin hoặc user1" />
+            <label>Tên phim:</label>
+            <input type="text" id="upload-title" placeholder="Nhập tên phim" />
           </div>
           <div class="form-group">
-            <label>Mật khẩu:</label>
-            <input type="password" id="login-password" placeholder="admin123 hoặc user123" />
+            <label>Mô tả:</label>
+            <textarea
+              id="upload-description"
+              placeholder="Mô tả phim"
+              rows="2"
+            ></textarea>
           </div>
-          <button onclick="login()" class="btn-primary">Đăng nhập</button>
-          <p class="hint">💡 Tài khoản mặc định: admin/admin123 hoặc user1/user123</p>
-        </div>
-
-        <!-- Register Tab -->
-        <div id="register-tab" class="auth-form">
-          <h2>Tạo tài khoản mới</h2>
+          <div class="form-row">
+            <div class="form-group" style="flex: 1">
+              <label>Ngày chiếu:</label>
+              <input type="date" id="upload-date" />
+            </div>
+            <div class="form-group" style="flex: 1">
+              <label>Giờ chiếu:</label>
+              <input type="time" id="upload-time" />
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group" style="flex: 1">
+              <label>Rạp:</label>
+              <input
+                type="text"
+                id="upload-theater"
+                placeholder="Rạp 1, 2, 3..."
+              />
+            </div>
+            <div class="form-group" style="flex: 1">
+              <label>Giá vé (VNĐ):</label>
+              <input type="number" id="upload-price" placeholder="100000" />
+            </div>
+          </div>
           <div class="form-group">
-            <label>Tên đăng nhập:</label>
-            <input type="text" id="register-username" placeholder="Nhập tên đăng nhập" />
+            <label>Poster (ảnh):</label>
+            <input type="file" id="upload-poster" accept="image/*" />
+            <small>Hỗ trợ JPG, PNG, WEBP (tối đa 5MB)</small>
           </div>
-          <div class="form-group">
-            <label>Email:</label>
-            <input type="email" id="register-email" placeholder="Nhập email" />
+          <button onclick="uploadMovie()" class="btn-primary">
+            Upload phim
+          </button>
+        </div>
+      </section>
+
+      <!-- ===== EDIT MOVIE MODAL ===== -->
+      <div id="edit-modal" class="modal" style="display: none">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h2>✏️ Sửa thông tin phim</h2>
+            <button onclick="closeEditModal()" class="modal-close">
+              &times;
+            </button>
           </div>
-          <div class="form-group">
-            <label>Mật khẩu (tối thiểu 6 ký tự):</label>
-            <input type="password" id="register-password" placeholder="Nhập mật khẩu" />
+          <div class="modal-body">
+            <div class="form-group">
+              <label>Tên phim:</label>
+              <input type="text" id="edit-title" placeholder="Nhập tên phim" />
+            </div>
+            <div class="form-group">
+              <label>Mô tả:</label>
+              <textarea
+                id="edit-description"
+                placeholder="Mô tả phim"
+                rows="2"
+              ></textarea>
+            </div>
+            <div class="form-row">
+              <div class="form-group" style="flex: 1">
+                <label>Ngày chiếu:</label>
+                <input type="date" id="edit-date" />
+              </div>
+              <div class="form-group" style="flex: 1">
+                <label>Giờ chiếu:</label>
+                <input type="time" id="edit-time" />
+              </div>
+            </div>
+            <div class="form-row">
+              <div class="form-group" style="flex: 1">
+                <label>Rạp:</label>
+                <input
+                  type="text"
+                  id="edit-theater"
+                  placeholder="Rạp 1, 2, 3..."
+                />
+              </div>
+              <div class="form-group" style="flex: 1">
+                <label>Giá vé (VNĐ):</label>
+                <input type="number" id="edit-price" placeholder="100000" />
+              </div>
+            </div>
+            <div class="form-group">
+              <label>Poster (ảnh - để trống nếu không thay đổi):</label>
+              <input type="file" id="edit-poster" accept="image/*" />
+              <small>Hỗ trợ JPG, PNG, WEBP (tối đa 5MB)</small>
+            </div>
+            <div class="form-group">
+              <label>Video intro phim (để trống nếu không thay đổi):</label>
+              <input type="file" id="edit-intro-video" accept="video/*" />
+              <small>Hỗ trợ MP4, WebM, OGG (tối đa 100MB)</small>
+              <div
+                id="video-upload-progress"
+                style="display: none; margin-top: 10px"
+              >
+                <div class="progress-bar">
+                  <div id="upload-progress" class="progress-fill"></div>
+                </div>
+                <p
+                  id="upload-status"
+                  style="margin-top: 5px; font-size: 0.9rem"
+                ></p>
+              </div>
+            </div>
           </div>
-          <button onclick="register()" class="btn-primary">Đăng ký</button>
-        </div>
-      </div>
-    </section>
-
-    <!-- ===== ADMIN UPLOAD SECTION ===== -->
-    <section id="admin-section" class="card" style="display: none;">
-      <h2>👨‍💼 Quản lý phim (Admin)</h2>
-      <div class="admin-form">
-        <h3>Upload phim mới</h3>
-        <div class="form-group">
-          <label>Tên phim:</label>
-          <input type="text" id="upload-title" placeholder="Nhập tên phim" />
-        </div>
-        <div class="form-group">
-          <label>Mô tả:</label>
-          <textarea id="upload-description" placeholder="Mô tả phim" rows="2"></textarea>
-        </div>
-        <div class="form-row">
-          <div class="form-group" style="flex: 1;">
-            <label>Ngày chiếu:</label>
-            <input type="date" id="upload-date" />
+          <div class="modal-footer">
+            <button onclick="closeEditModal()" class="btn-secondary">
+              Hủy
+            </button>
+            <button onclick="saveEditedMovie()" class="btn-primary">
+              Lưu thay đổi
+            </button>
           </div>
-          <div class="form-group" style="flex: 1;">
-            <label>Giờ chiếu:</label>
-            <input type="time" id="upload-time" />
-          </div>
-        </div>
-        <div class="form-row">
-          <div class="form-group" style="flex: 1;">
-            <label>Rạp:</label>
-            <input type="text" id="upload-theater" placeholder="Rạp 1, 2, 3..." />
-          </div>
-          <div class="form-group" style="flex: 1;">
-            <label>Giá vé (VNĐ):</label>
-            <input type="number" id="upload-price" placeholder="100000" />
-          </div>
-        </div>
-        <div class="form-group">
-          <label>Poster (ảnh):</label>
-          <input type="file" id="upload-poster" accept="image/*" />
-          <small>Hỗ trợ JPG, PNG, WEBP (tối đa 5MB)</small>
-        </div>
-        <button onclick="uploadMovie()" class="btn-primary">Upload phim</button>
-      </div>
-    </section>
-
-    <!-- ===== CONNECTION STATUS ===== -->
-    <div id="connection-status" class="status-bar">
-      <span id="status-indicator">⚪</span>
-      <span id="status-text">Chưa kết nối</span>
-    </div>
-
-    <!-- ===== MOVIES LIST SECTION ===== -->
-    <section id="movies-section" class="card" style="display: none;">
-      <h2>🎥 Danh sách phim</h2>
-      <div id="movies-list" class="movies-grid"></div>
-    </section>
-
-    <!-- ===== SEAT SELECTION SECTION ===== -->
-    <section id="seats-section" class="card" style="display: none;">
-      <div class="seat-header">
-        <div>
-          <h2 id="selected-movie-title"></h2>
-          <p id="selected-movie-info"></p>
-        </div>
-        <button onclick="goBackToMovies()" class="btn-secondary">← Quay lại</button>
-      </div>
-
-      <div class="screen">🎬 MÀN HÌNH 🎬</div>
-
-      <div id="seats-container" class="seats-container"></div>
-
-      <div class="legend">
-        <div class="legend-item">
-          <div class="seat available"></div>
-          <span>Trống</span>
-        </div>
-        <div class="legend-item">
-          <div class="seat selected"></div>
-          <span>Đang chọn (bạn)</span>
-        </div>
-        <div class="legend-item">
-          <div class="seat booked"></div>
-          <span>Đã đặt</span>
         </div>
       </div>
 
-      <div class="booking-info">
-        <div class="booking-summary">
-          <p>Ghế đã chọn: <strong id="selected-count">0</strong> | Tổng tiền: <strong id="total-price">0 VNĐ</strong></p>
-          <button onclick="confirmBooking()" class="btn-primary" id="confirm-btn" disabled>Xác nhận đặt vé</button>
-        </div>
+      <!-- ===== CONNECTION STATUS ===== -->
+      <div id="connection-status" class="status-bar">
+        <span id="status-indicator">⚪</span>
+        <span id="status-text">Chưa kết nối</span>
       </div>
-    </section>
 
-    <!-- ===== ACTIVITY LOG ===== -->
-    <section class="card">
-      <h2>📊 Hoạt động Real-time</h2>
-      <div id="logs" class="logs-container"></div>
-    </section>
-  </main>
+      <!-- ===== MOVIES LIST SECTION ===== -->
+      <section id="movies-section" class="card" style="display: none">
+        <h2>🎥 Danh sách phim</h2>
+        <div id="movies-list" class="movies-grid"></div>
+      </section>
 
-  <!-- Footer -->
-  <footer>
-    <div class="container">
-      <p>🎓 Dự án môn Lập trình mạng - Hệ thống đặt vé xem phim Real-time</p>
-      <p>Khái niệm: Client-Server | HTTP REST API | JWT Auth | WebSocket | SQLite Database</p>
-    </div>
-  </footer>
+      <!-- ===== SEAT SELECTION SECTION ===== -->
+      <section id="seats-section" class="card" style="display: none">
+        <div class="seat-header">
+          <div>
+            <h2 id="selected-movie-title"></h2>
+            <p id="selected-movie-info"></p>
+          </div>
+          <button onclick="goBackToMovies()" class="btn-secondary">
+            ← Quay lại
+          </button>
+        </div>
 
-  <!-- Socket.IO Client Library -->
-  <script src="/socket.io/socket.io.js"></script>
-  <!-- Main App Script -->
-  <script src="app.js"></script>
+        <div class="screen">🎬 MÀN HÌNH 🎬</div>
 
-  <script>
-    // Tab switching for auth
-    function switchAuthTab(tab) {
-      const tabs = document.querySelectorAll('.auth-tab');
-      const forms = document.querySelectorAll('.auth-form');
+        <div id="seats-container" class="seats-container"></div>
 
-      tabs.forEach(t => t.classList.remove('active'));
-      forms.forEach(f => f.classList.remove('active'));
+        <div class="legend">
+          <div class="legend-item">
+            <div class="seat available"></div>
+            <span>Trống</span>
+          </div>
+          <div class="legend-item">
+            <div class="seat selected"></div>
+            <span>Đang chọn (bạn)</span>
+          </div>
+          <div class="legend-item">
+            <div class="seat booked"></div>
+            <span>Đã đặt</span>
+          </div>
+        </div>
 
-      event.target.classList.add('active');
-      document.getElementById(tab + '-tab').classList.add('active');
-    }
+        <div class="booking-info">
+          <div class="booking-summary">
+            <p>
+              Ghế đã chọn: <strong id="selected-count">0</strong> | Tổng tiền:
+              <strong id="total-price">0 VNĐ</strong>
+            </p>
+            <button
+              onclick="confirmBooking()"
+              class="btn-primary"
+              id="confirm-btn"
+              disabled
+            >
+              Xác nhận đặt vé
+            </button>
+          </div>
+        </div>
+      </section>
 
-    // Auto-enable/disable confirm button
-    function updateConfirmButton() {
-      const btn = document.getElementById('confirm-btn');
-      if (btn) {
-        btn.disabled = selectedSeats.size === 0;
+      <!-- ===== ACTIVITY LOG ===== -->
+      <section class="card">
+        <h2>📊 Hoạt động Real-time</h2>
+        <div id="logs" class="logs-container"></div>
+      </section>
+    </main>
+
+    <!-- Footer -->
+    <footer>
+      <div class="container">
+        <p>🎓 Dự án môn Lập trình mạng - Hệ thống đặt vé xem phim Real-time</p>
+        <p>
+          Khái niệm: Client-Server | HTTP REST API | JWT Auth | WebSocket |
+          SQLite Database
+        </p>
+      </div>
+    </footer>
+
+    <!-- Socket.IO Client Library -->
+    <script src="/socket.io/socket.io.js"></script>
+    <!-- Main App Script -->
+    <script src="app.js"></script>
+
+    <script>
+      // Tab switching for auth
+      function switchAuthTab(tab) {
+        const tabs = document.querySelectorAll(".auth-tab");
+        const forms = document.querySelectorAll(".auth-form");
+
+        tabs.forEach((t) => t.classList.remove("active"));
+        forms.forEach((f) => f.classList.remove("active"));
+
+        event.target.classList.add("active");
+        document.getElementById(tab + "-tab").classList.add("active");
       }
-    }
 
-    // Override toggleSeat to update button
-    const originalToggleSeat = toggleSeat;
-    toggleSeat = function(seatId, status) {
-      originalToggleSeat.call(this, seatId, status);
-      updateConfirmButton();
-    };
-  </script>
-</body>
+      // Auto-enable/disable confirm button
+      function updateConfirmButton() {
+        const btn = document.getElementById("confirm-btn");
+        if (btn) {
+          btn.disabled = selectedSeats.size === 0;
+        }
+      }
+
+      // Override toggleSeat to update button
+      const originalToggleSeat = toggleSeat;
+      toggleSeat = function (seatId, status) {
+        originalToggleSeat.call(this, seatId, status);
+        updateConfirmButton();
+      };
+    </script>
+  </body>
 </html>
