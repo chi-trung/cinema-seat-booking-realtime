@@ -352,6 +352,16 @@ function selectMovie(movieId) {
     movie.time
   } | ${movie.date} | ${movie.theater} | ${movie.price.toLocaleString()} VNĐ`;
 
+  // Hiển thị video demo nếu phim có
+  const videoDemoSection = document.getElementById("video-demo-section");
+  if (movie.intro_video_url) {
+    document.getElementById("demo-video-player").src = movie.intro_video_url;
+    videoDemoSection.style.display = "block";
+    log(`🎥 Hiển thị video demo: ${movie.intro_video_url}`, "info");
+  } else {
+    videoDemoSection.style.display = "none";
+  }
+
   document.getElementById("movies-section").style.display = "none";
   document.getElementById("seats-section").style.display = "block";
 
@@ -506,6 +516,8 @@ function goBackToMovies() {
   currentMovieId = null;
   selectedSeats.clear();
   document.getElementById("seats-section").style.display = "none";
+  document.getElementById("video-demo-section").style.display = "none";
+  document.getElementById("demo-video-player").src = "";
   document.getElementById("movies-section").style.display = "block";
 }
 
@@ -535,6 +547,17 @@ function openEditModal(movieId) {
   document.getElementById("edit-theater").value = movie.theater;
   document.getElementById("edit-price").value = movie.price;
   document.getElementById("edit-poster").value = ""; // Reset file input
+  document.getElementById("edit-intro-video").value = ""; // Reset video file input
+
+  // Hiển thị thông tin video nếu phim đã có
+  const videoInfoDiv = document.getElementById("current-video-info");
+  if (movie.intro_video_url) {
+    const videoFileName = movie.intro_video_url.split("/").pop();
+    document.getElementById("current-video-name").textContent = videoFileName;
+    videoInfoDiv.style.display = "block";
+  } else {
+    videoInfoDiv.style.display = "none";
+  }
 
   // Hiển thị modal
   document.getElementById("edit-modal").style.display = "flex";
@@ -826,10 +849,16 @@ function renderMovies(movieList) {
     div.className = "movie-card";
 
     // Hiển thị nút sửa/xóa nếu user là admin
+    // Chỉ hiển thị nút "Upload Video" nếu phim CHƯA có video
+    const uploadVideoButton = !movie.intro_video_url
+      ? `<button onclick="openUploadVideoModal(${movie.id})" class="btn-upload" title="Upload video demo">🎥 Upload Video</button>`
+      : `<button onclick="openEditModal(${movie.id})" class="btn-has-video" title="Video demo được lưu - Edit để thay đổi">✓ Có video demo</button>`;
+
     const adminButtons =
       userRole === "admin"
         ? `
       <div class="admin-buttons">
+        ${uploadVideoButton}
         <button onclick="openEditModal(${
           movie.id
         })" class="btn-edit" title="Sửa phim">✏️ Sửa</button>
@@ -872,5 +901,583 @@ function log(message, type = "info") {
   // Giữ tối đa 100 log entries
   while (logContainer.children.length > 100) {
     logContainer.removeChild(logContainer.firstChild);
+  }
+}
+
+// ============================================
+// RESUMABLE VIDEO UPLOAD - Global State
+// ============================================
+
+let videoUploadState = {
+  currentMovieId: null,
+  sessionId: null,
+  videoFile: null,
+  totalSize: 0,
+  uploadedSize: 0,
+  chunkSize: 1048576, // 1MB
+  currentChunk: 0,
+  totalChunks: 0,
+  isUploading: false,
+  isPaused: false,
+  uploadStartTime: 0,
+  lastChunkTime: 0,
+};
+
+/**
+ * Mở modal upload video
+ */
+function openUploadVideoModal(movieId) {
+  const movie = movies.find((m) => m.id == movieId);
+  if (!movie) return;
+
+  videoUploadState.currentMovieId = movieId;
+  document.getElementById("video-upload-modal").style.display = "flex";
+  document.getElementById("upload-controls").style.display = "none";
+  document.getElementById("file-info").style.display = "none";
+  document.getElementById("video-file-input").value = "";
+  document.getElementById("upload-status-message").style.display = "none";
+
+  log(`📹 Mở modal upload video cho phim: ${movie.title}`, "info");
+
+  // Check và restore upload session nếu có
+  checkAndRestoreUploadSession(movieId);
+}
+
+/**
+ * Đóng modal upload video
+ */
+function closeVideoUploadModal() {
+  document.getElementById("video-upload-modal").style.display = "none";
+
+  // Xóa localStorage khi đóng modal
+  if (videoUploadState.currentMovieId) {
+    localStorage.removeItem(`video-upload-${videoUploadState.currentMovieId}`);
+  }
+
+  videoUploadState = {
+    ...videoUploadState,
+    sessionId: null,
+    videoFile: null,
+    totalSize: 0,
+    uploadedSize: 0,
+  };
+}
+
+/**
+ * Xử lý chọn file video
+ */
+function onVideoFileSelected(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+
+  const MAX_SIZE = 100 * 1024 * 1024; // 100MB
+  if (file.size > MAX_SIZE) {
+    alert(
+      `File quá lớn! Tối đa 100MB. File của bạn: ${(
+        file.size /
+        (1024 * 1024)
+      ).toFixed(2)}MB`
+    );
+    return;
+  }
+
+  videoUploadState.videoFile = file;
+  videoUploadState.totalSize = file.size;
+  videoUploadState.totalChunks = Math.ceil(
+    file.size / videoUploadState.chunkSize
+  );
+
+  // Hiển thị thông tin file
+  document.getElementById("file-name").textContent = file.name;
+  document.getElementById("file-size").textContent = `${(
+    file.size /
+    (1024 * 1024)
+  ).toFixed(2)} MB`;
+  document.getElementById("file-info").style.display = "block";
+  document.getElementById("upload-controls").style.display = "block";
+
+  // Reset UI
+  document.getElementById("upload-progress-bar").style.width = "0%";
+  document.getElementById("progress-text").textContent = "0%";
+  document.getElementById("uploaded-size").textContent =
+    "0 MB / " + (file.size / (1024 * 1024)).toFixed(2) + " MB";
+  document.getElementById("chunks-info").textContent =
+    "0 / " + videoUploadState.totalChunks;
+
+  log(
+    `✅ Chọn file video: ${file.name} (${(file.size / (1024 * 1024)).toFixed(
+      2
+    )} MB)`,
+    "success"
+  );
+}
+
+/**
+ * Khởi tạo upload session
+ */
+async function initUploadSession() {
+  if (!videoUploadState.videoFile) {
+    alert("Vui lòng chọn file video");
+    return;
+  }
+
+  try {
+    log("📡 Khởi tạo upload session...", "info");
+
+    const response = await fetch(
+      `${API_BASE}/admin/movies/${videoUploadState.currentMovieId}/video-upload/init`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${authToken}`,
+        },
+        body: JSON.stringify({
+          filename: videoUploadState.videoFile.name,
+          fileSize: videoUploadState.videoFile.size,
+        }),
+      }
+    );
+
+    const result = await response.json();
+    if (!result.success) {
+      alert(`❌ ${result.message}`);
+      log(`❌ Lỗi khởi tạo session: ${result.message}`, "error");
+      return null;
+    }
+
+    videoUploadState.sessionId = result.data.sessionId;
+    videoUploadState.chunkSize = result.data.chunkSize;
+
+    // Lưu sessionId vào localStorage để resume nếu disconnect
+    localStorage.setItem(
+      `video-upload-${videoUploadState.currentMovieId}`,
+      JSON.stringify({
+        sessionId: result.data.sessionId,
+        movieId: videoUploadState.currentMovieId,
+        timestamp: Date.now(),
+      })
+    );
+
+    log(`✅ Session khởi tạo thành công: ${result.data.sessionId}`, "success");
+    return result.data.sessionId;
+  } catch (error) {
+    log(`❌ Lỗi khởi tạo session: ${error.message}`, "error");
+    return null;
+  }
+}
+
+/**
+ * Check và restore upload session nếu có
+ */
+async function checkAndRestoreUploadSession(movieId) {
+  const storageKey = `video-upload-${movieId}`;
+  const savedSession = localStorage.getItem(storageKey);
+
+  if (!savedSession) {
+    return false;
+  }
+
+  try {
+    const sessionData = JSON.parse(savedSession);
+    const sessionId = sessionData.sessionId;
+
+    log("🔍 Kiểm tra upload session cũ...", "info");
+
+    // Check xem session còn hợp lệ không
+    const statusResponse = await fetch(
+      `${API_BASE}/admin/movies/${movieId}/video-upload/status/${sessionId}`,
+      {
+        headers: { Authorization: `Bearer ${authToken}` },
+      }
+    );
+
+    if (!statusResponse.ok) {
+      // Session hết hạn, xóa khỏi localStorage
+      localStorage.removeItem(storageKey);
+      return false;
+    }
+
+    const statusData = await statusResponse.json();
+    if (!statusData.success) {
+      localStorage.removeItem(storageKey);
+      return false;
+    }
+
+    // Restore session data
+    videoUploadState.sessionId = sessionId;
+    videoUploadState.currentMovieId = movieId;
+    videoUploadState.uploadedSize = statusData.data.uploadedSize;
+    videoUploadState.totalSize = statusData.data.totalSize;
+    videoUploadState.chunkSize = statusData.data.chunkSize;
+    videoUploadState.currentChunk = statusData.data.uploadedChunks;
+    videoUploadState.totalChunks = Math.ceil(
+      statusData.data.totalSize / statusData.data.chunkSize
+    );
+
+    // Update UI
+    const percentComplete = Math.round(
+      (videoUploadState.uploadedSize / videoUploadState.totalSize) * 100
+    );
+
+    document.getElementById("upload-progress-bar").style.width =
+      percentComplete + "%";
+    document.getElementById("progress-text").textContent =
+      Math.round(percentComplete) + "%";
+    document.getElementById("uploaded-size").textContent =
+      (videoUploadState.uploadedSize / (1024 * 1024)).toFixed(2) +
+      " MB / " +
+      (videoUploadState.totalSize / (1024 * 1024)).toFixed(2) +
+      " MB";
+    document.getElementById("chunks-info").textContent =
+      videoUploadState.currentChunk + " / " + videoUploadState.totalChunks;
+
+    // Hiển thị modal và button tiếp tục
+    document.getElementById("video-upload-modal").style.display = "flex";
+    document.getElementById("start-upload-btn").textContent = "Tiếp tục Upload";
+    document.getElementById("start-upload-btn").style.display = "block";
+    document.getElementById("pause-upload-btn").style.display = "none";
+    document.getElementById("video-file-input").disabled = true;
+
+    log(`✅ Phục hồi upload session: ${percentComplete}% đã upload`, "success");
+    showUploadStatusMessage(
+      `ℹ️ Upload trước đó: ${percentComplete}% hoàn thành. Nhấn 'Tiếp tục Upload' để tiếp tục.`,
+      "info"
+    );
+
+    return true;
+  } catch (error) {
+    log(`⚠️ Không thể phục hồi session: ${error.message}`, "warning");
+    localStorage.removeItem(storageKey);
+    return false;
+  }
+}
+
+/**
+ * Upload một chunk
+ */
+async function uploadChunk(chunkIndex) {
+  const file = videoUploadState.videoFile;
+  const chunkSize = videoUploadState.chunkSize;
+  const start = chunkIndex * chunkSize;
+  const end = Math.min(start + chunkSize, file.size);
+  const chunk = file.slice(start, end);
+
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+
+    reader.onload = async () => {
+      try {
+        const chunkData = reader.result;
+
+        const xhr = new XMLHttpRequest();
+
+        xhr.onload = () => {
+          if (xhr.status === 200) {
+            const result = JSON.parse(xhr.responseText);
+            if (result.success) {
+              resolve(result.data);
+            } else {
+              reject(new Error(result.message));
+            }
+          } else {
+            reject(new Error(`HTTP ${xhr.status}: ${xhr.statusText}`));
+          }
+        };
+
+        xhr.onerror = () => {
+          reject(new Error("Network error - chunk upload failed"));
+        };
+
+        xhr.open(
+          "POST",
+          `${API_BASE}/admin/movies/${videoUploadState.currentMovieId}/video-upload/chunk`
+        );
+        xhr.setRequestHeader("Authorization", `Bearer ${authToken}`);
+        xhr.setRequestHeader("X-Session-Id", videoUploadState.sessionId);
+        xhr.setRequestHeader("X-Chunk-Index", chunkIndex.toString());
+        xhr.setRequestHeader("X-Chunk-Size", (end - start).toString());
+        xhr.setRequestHeader("Content-Type", "application/octet-stream");
+
+        xhr.send(chunkData);
+      } catch (error) {
+        reject(error);
+      }
+    };
+
+    reader.onerror = () => {
+      reject(new Error("File read error"));
+    };
+
+    reader.readAsArrayBuffer(chunk);
+  });
+}
+
+/**
+ * Bắt đầu upload video với hỗ trợ resume
+ */
+async function startVideoUpload() {
+  if (!videoUploadState.videoFile) {
+    alert("Vui lòng chọn file video");
+    return;
+  }
+
+  // Nếu chưa có session, khởi tạo mới
+  if (!videoUploadState.sessionId) {
+    const sessionId = await initUploadSession();
+    if (!sessionId) return;
+  }
+
+  // Kiểm tra session có còn hợp lệ không (check progress)
+  try {
+    const statusResponse = await fetch(
+      `${API_BASE}/admin/movies/${videoUploadState.currentMovieId}/video-upload/status/${videoUploadState.sessionId}`,
+      {
+        headers: { Authorization: `Bearer ${authToken}` },
+      }
+    );
+
+    if (!statusResponse.ok) {
+      // Session hết hạn, tạo mới
+      log("⚠️ Session hết hạn, tạo session mới...", "warning");
+      const sessionId = await initUploadSession();
+      if (!sessionId) return;
+    } else {
+      const statusData = await statusResponse.json();
+      if (statusData.success) {
+        videoUploadState.uploadedSize = statusData.data.uploadedSize;
+        videoUploadState.currentChunk = statusData.data.uploadedChunks;
+
+        if (videoUploadState.uploadedSize > 0) {
+          log(
+            `ℹ️ Tiếp tục upload từ ${(
+              videoUploadState.uploadedSize /
+              (1024 * 1024)
+            ).toFixed(2)} MB (chunk ${videoUploadState.currentChunk}/${
+              videoUploadState.totalChunks
+            })`,
+            "info"
+          );
+        }
+      }
+    }
+  } catch (error) {
+    log(`⚠️ Không thể kiểm tra session: ${error.message}`, "warning");
+  }
+
+  // Bắt đầu upload
+  videoUploadState.isUploading = true;
+  videoUploadState.isPaused = false;
+  videoUploadState.uploadStartTime = Date.now();
+  videoUploadState.lastChunkTime = Date.now();
+
+  document.getElementById("start-upload-btn").style.display = "none";
+  document.getElementById("pause-upload-btn").style.display = "block";
+  document.getElementById("video-file-input").disabled = true;
+
+  log("🚀 Bắt đầu upload video...", "info");
+
+  // Upload từng chunk
+  for (
+    let i = videoUploadState.currentChunk;
+    i < videoUploadState.totalChunks;
+    i++
+  ) {
+    // Kiểm tra pause
+    while (videoUploadState.isPaused) {
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+
+    // Kiểm tra isUploading (có thể đã cancel)
+    if (!videoUploadState.isUploading) {
+      log("⚠️ Upload đã bị hủy", "warning");
+      return;
+    }
+
+    try {
+      const before = Date.now();
+      const result = await uploadChunk(i);
+
+      const now = Date.now();
+      const chunkTime = (now - before) / 1000;
+      const uploadedSize = result.uploadedSize;
+      const percentComplete = result.percentComplete;
+
+      videoUploadState.uploadedSize = uploadedSize;
+      videoUploadState.currentChunk = i + 1;
+
+      // Tính toán speed và ETA
+      const totalTime = (now - videoUploadState.uploadStartTime) / 1000;
+      const avgSpeed = uploadedSize / (1024 * 1024) / totalTime;
+      const remainingSize = videoUploadState.totalSize - uploadedSize;
+      const eta = remainingSize / (avgSpeed * 1024 * 1024);
+
+      // Update UI
+      document.getElementById("upload-progress-bar").style.width =
+        percentComplete + "%";
+      document.getElementById("progress-text").textContent =
+        Math.round(percentComplete) + "%";
+      document.getElementById("uploaded-size").textContent =
+        (uploadedSize / (1024 * 1024)).toFixed(2) +
+        " MB / " +
+        (videoUploadState.totalSize / (1024 * 1024)).toFixed(2) +
+        " MB";
+      document.getElementById("upload-speed").textContent =
+        avgSpeed.toFixed(2) + " MB/s";
+      document.getElementById("chunks-info").textContent =
+        videoUploadState.currentChunk + " / " + videoUploadState.totalChunks;
+
+      const etaMinutes = Math.floor(eta / 60);
+      const etaSeconds = Math.floor(eta % 60);
+      document.getElementById("time-remaining").textContent =
+        etaMinutes > 0 ? `${etaMinutes}m${etaSeconds}s` : `${etaSeconds}s`;
+
+      log(
+        `✅ Chunk ${i + 1}/${
+          videoUploadState.totalChunks
+        } uploaded - ${percentComplete}%`,
+        "success"
+      );
+    } catch (error) {
+      log(`❌ Lỗi upload chunk ${i}: ${error.message}`, "error");
+      showUploadStatusMessage(
+        `❌ Lỗi: ${error.message}. Bạn có thể tiếp tục upload sau.`,
+        "error"
+      );
+      videoUploadState.isUploading = false;
+      document.getElementById("pause-upload-btn").style.display = "none";
+      document.getElementById("start-upload-btn").style.display = "block";
+      document.getElementById("video-file-input").disabled = false;
+      return;
+    }
+  }
+
+  // Hoàn thành upload
+  await completeUpload();
+}
+
+/**
+ * Tạm dừng upload
+ */
+function pauseVideoUpload() {
+  videoUploadState.isPaused = true;
+  document.getElementById("pause-upload-btn").style.display = "none";
+  document.getElementById("start-upload-btn").style.display = "block";
+  document.getElementById("start-upload-btn").textContent = "Tiếp tục Upload";
+  log("⏸️ Upload đã tạm dừng", "info");
+  showUploadStatusMessage(
+    "⏸️ Upload đã tạm dừng. Nhấn 'Tiếp tục Upload' để tiếp tục.",
+    "warning"
+  );
+}
+
+/**
+ * Hủy upload
+ */
+async function cancelVideoUpload() {
+  if (!confirm("⚠️ Bạn chắc chắn muốn hủy upload?")) return;
+
+  videoUploadState.isUploading = false;
+  videoUploadState.isPaused = false;
+
+  document.getElementById("pause-upload-btn").style.display = "none";
+  document.getElementById("start-upload-btn").style.display = "block";
+  document.getElementById("start-upload-btn").textContent = "Bắt đầu Upload";
+  document.getElementById("video-file-input").disabled = false;
+
+  log("🗑️ Upload đã bị hủy", "warning");
+}
+
+/**
+ * Hoàn thành upload
+ */
+async function completeUpload() {
+  try {
+    log("📡 Hoàn thành upload video...", "info");
+    console.log(
+      "🔍 Debug: Gọi API complete với sessionId:",
+      videoUploadState.sessionId
+    );
+
+    const response = await fetch(
+      `${API_BASE}/admin/movies/${videoUploadState.currentMovieId}/video-upload/complete`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${authToken}`,
+        },
+        body: JSON.stringify({
+          sessionId: videoUploadState.sessionId,
+        }),
+      }
+    );
+
+    console.log("🔍 Debug: Response status:", response.status);
+    const result = await response.json();
+    console.log("🔍 Debug: Response data:", result);
+
+    if (result.success) {
+      document.getElementById("upload-progress-bar").style.width = "100%";
+      document.getElementById("progress-text").textContent = "100%";
+
+      const successMsg = `✅ Upload video hoàn thành thành công!\n\nFile: ${
+        result.data.videoName
+      }\nDung lượng: ${(result.data.totalSize / (1024 * 1024)).toFixed(2)} MB`;
+
+      showUploadStatusMessage(
+        "✅ Upload video hoàn thành thành công!",
+        "success"
+      );
+      log(
+        `✅ Upload video thành công! File: ${result.data.videoName}`,
+        "success"
+      );
+
+      alert(successMsg);
+
+      // Reset UI
+      setTimeout(() => {
+        closeVideoUploadModal();
+        loadMovies();
+      }, 1500);
+    } else {
+      showUploadStatusMessage(`❌ ${result.message}`, "error");
+      log(`❌ Lỗi hoàn thành upload: ${result.message}`, "error");
+      alert(`❌ Lỗi: ${result.message}`);
+    }
+  } catch (error) {
+    console.error("🔍 Debug: Error:", error);
+    showUploadStatusMessage(`❌ Lỗi: ${error.message}`, "error");
+    log(`❌ Lỗi hoàn thành upload: ${error.message}`, "error");
+    alert(`❌ Lỗi upload: ${error.message}`);
+  }
+
+  videoUploadState.isUploading = false;
+  document.getElementById("pause-upload-btn").style.display = "none";
+  document.getElementById("start-upload-btn").style.display = "block";
+  document.getElementById("video-file-input").disabled = false;
+}
+
+/**
+ * Hiển thị message upload status
+ */
+function showUploadStatusMessage(message, type) {
+  const element = document.getElementById("upload-status-message");
+  element.textContent = message;
+  element.style.display = "block";
+
+  if (type === "success") {
+    element.style.backgroundColor = "#d4edda";
+    element.style.color = "#155724";
+    element.style.border = "1px solid #c3e6cb";
+  } else if (type === "error") {
+    element.style.backgroundColor = "#f8d7da";
+    element.style.color = "#721c24";
+    element.style.border = "1px solid #f5c6cb";
+  } else if (type === "warning") {
+    element.style.backgroundColor = "#fff3cd";
+    element.style.color = "#856404";
+    element.style.border = "1px solid #ffeaa7";
   }
 }

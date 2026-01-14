@@ -22,6 +22,7 @@ const path = require("path");
 const multer = require("multer");
 const jwt = require("jsonwebtoken");
 const fs = require("fs");
+const crypto = require("crypto");
 
 // Import database functions
 const db = require("./database");
@@ -40,7 +41,8 @@ const io = socketIO(server, {
 
 // Middleware
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: "50mb" }));
+app.use(express.urlencoded({ limit: "50mb" }));
 app.use(express.static(path.join(__dirname, "../client")));
 
 // ============================================
@@ -49,11 +51,19 @@ app.use(express.static(path.join(__dirname, "../client")));
 
 const JWT_SECRET = process.env.JWT_SECRET || "cinema-secret-key-2026";
 const UPLOAD_DIR = path.join(__dirname, "../uploads");
+const UPLOAD_TEMP_DIR = path.join(__dirname, "../uploads/temp");
 const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB
+const MAX_VIDEO_SIZE = 100 * 1024 * 1024; // 100MB
+const CHUNK_SIZE = 1 * 1024 * 1024; // 1MB chunks
 
 // Tạo folder uploads nếu không tồn tại
 if (!fs.existsSync(UPLOAD_DIR)) {
   fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+}
+
+// Tạo folder temp nếu không tồn tại
+if (!fs.existsSync(UPLOAD_TEMP_DIR)) {
+  fs.mkdirSync(UPLOAD_TEMP_DIR, { recursive: true });
 }
 
 // Cấu hình multer cho upload file
@@ -83,7 +93,6 @@ const upload = multer({
 
 // Cấu hình multer cho upload video intro
 // Kiến thức lập trình mạng: Streaming file upload, Content-Type validation
-const MAX_VIDEO_SIZE = 100 * 1024 * 1024; // 100MB cho video
 
 const videoStorage = multer.diskStorage({
   destination: (req, file, cb) => {
@@ -983,6 +992,352 @@ io.on("connection", (socket) => {
     console.log(`📊 Tổng số clients: ${connectedClients.size}`);
   });
 });
+
+// ============================================
+// RESUMABLE VIDEO UPLOAD ENDPOINTS
+// ============================================
+
+/**
+ * ENDPOINT: Khởi tạo upload session video
+ * Method: POST
+ * URL: /api/admin/movies/:id/video-upload/init
+ *
+ * Kiến thức lập trình mạng:
+ * - Session Management: Lưu trạng thái upload trên server
+ * - Resume Protocol: Cho phép tiếp tục upload sau ngắt kết nối
+ * - Chunk-based upload: Chia file thành các chunks nhỏ để upload
+ */
+app.post(
+  "/api/admin/movies/:movieId/video-upload/init",
+  authenticateToken,
+  adminOnly,
+  async (req, res) => {
+    try {
+      const { movieId } = req.params;
+      const { filename, fileSize } = req.body;
+
+      if (!filename || !fileSize) {
+        return res.status(400).json({
+          success: false,
+          message: "Vui lòng cung cấp filename và fileSize",
+        });
+      }
+
+      if (fileSize > MAX_VIDEO_SIZE) {
+        return res.status(400).json({
+          success: false,
+          message: `File quá lớn! Tối đa ${
+            MAX_VIDEO_SIZE / (1024 * 1024)
+          }MB. File của bạn: ${(fileSize / (1024 * 1024)).toFixed(2)}MB`,
+        });
+      }
+
+      // Kiểm tra phim tồn tại
+      const movie = await db.getMovieById(movieId);
+      if (!movie) {
+        return res.status(404).json({
+          success: false,
+          message: "Phim không tồn tại",
+        });
+      }
+
+      // Tạo session upload
+      const sessionId = await db.createVideoUploadSession(
+        movieId,
+        req.user.id,
+        filename,
+        fileSize,
+        CHUNK_SIZE
+      );
+
+      console.log(
+        `📡 Upload session created: ${sessionId} (Size: ${(
+          fileSize /
+          (1024 * 1024)
+        ).toFixed(2)}MB)`
+      );
+
+      res.json({
+        success: true,
+        message: "Upload session khởi tạo thành công",
+        data: {
+          sessionId,
+          chunkSize: CHUNK_SIZE,
+          totalChunks: Math.ceil(fileSize / CHUNK_SIZE),
+        },
+      });
+    } catch (error) {
+      res.status(500).json({
+        success: false,
+        message: error.message,
+      });
+    }
+  }
+);
+
+/**
+ * ENDPOINT: Upload chunk video
+ * Method: POST
+ * URL: /api/admin/movies/:id/video-upload/chunk
+ *
+ * Kiến thức lập trình mạng:
+ * - Streaming data: Upload dữ liệu theo từng chunk nhỏ
+ * - Checksum validation: Kiểm tra tính toàn vẹn chunk
+ * - Resumable logic: Lưu progress để có thể resume
+ */
+app.post(
+  "/api/admin/movies/:movieId/video-upload/chunk",
+  authenticateToken,
+  adminOnly,
+  express.raw({ type: "application/octet-stream", limit: "50mb" }),
+  async (req, res) => {
+    try {
+      const { movieId } = req.params;
+      const sessionId = req.headers["x-session-id"];
+      const chunkIndex = parseInt(req.headers["x-chunk-index"]);
+      const chunkSize = parseInt(req.headers["x-chunk-size"]);
+
+      if (!sessionId || isNaN(chunkIndex)) {
+        return res.status(400).json({
+          success: false,
+          message: "Vui lòng cung cấp sessionId và chunkIndex",
+        });
+      }
+
+      // Lấy session info
+      const session = await db.getVideoUploadSession(sessionId);
+      if (!session) {
+        return res.status(404).json({
+          success: false,
+          message: "Upload session không tồn tại",
+        });
+      }
+
+      // Kiểm tra quyền
+      if (session.user_id !== req.user.id && req.user.username !== "admin") {
+        return res.status(403).json({
+          success: false,
+          message: "Bạn không có quyền upload cho session này",
+        });
+      }
+
+      // Tính checksum chunk (MD5)
+      const chunkChecksum = crypto
+        .createHash("md5")
+        .update(req.body)
+        .digest("hex");
+
+      // Ghi chunk vào temp file
+      const tempFilePath = session.temp_file_path;
+
+      // Kiểm tra folder temp tồn tại
+      const tempDir = path.dirname(tempFilePath);
+      if (!fs.existsSync(tempDir)) {
+        fs.mkdirSync(tempDir, { recursive: true });
+      }
+
+      const fileStream = fs.createWriteStream(tempFilePath, { flags: "a" });
+
+      fileStream.write(req.body);
+      fileStream.end();
+
+      await new Promise((resolve, reject) => {
+        fileStream.on("finish", resolve);
+        fileStream.on("error", reject);
+      });
+
+      // Lưu chunk vào database
+      const uploadedSize = await db.saveUploadedChunk(
+        sessionId,
+        chunkIndex,
+        chunkSize,
+        chunkChecksum
+      );
+
+      const percentComplete = Math.round(
+        (uploadedSize / session.total_size) * 100
+      );
+
+      console.log(
+        `📥 Chunk ${chunkIndex} uploaded - Session: ${sessionId} - Progress: ${percentComplete}%`
+      );
+
+      res.json({
+        success: true,
+        message: "Chunk upload thành công",
+        data: {
+          sessionId,
+          chunkIndex,
+          uploadedSize,
+          totalSize: session.total_size,
+          percentComplete,
+        },
+      });
+    } catch (error) {
+      console.error("❌ Chunk upload error:", error.message);
+      res.status(500).json({
+        success: false,
+        message: error.message,
+      });
+    }
+  }
+);
+
+/**
+ * ENDPOINT: Hoàn thành upload video
+ * Method: POST
+ * URL: /api/admin/movies/:id/video-upload/complete
+ *
+ * Kiến thức lập trình mạng:
+ * - File assembly: Ghép các chunks lại thành file hoàn chỉnh
+ * - Atomic operation: Đảm bảo tính toàn vẹn trong quá trình hoàn thành
+ * - Database transaction: Cập nhật trạng thái video trong DB
+ */
+app.post(
+  "/api/admin/movies/:movieId/video-upload/complete",
+  authenticateToken,
+  adminOnly,
+  async (req, res) => {
+    try {
+      const { movieId } = req.params;
+      const { sessionId } = req.body;
+
+      if (!sessionId) {
+        return res.status(400).json({
+          success: false,
+          message: "Vui lòng cung cấp sessionId",
+        });
+      }
+
+      // Lấy session info
+      const session = await db.getVideoUploadSession(sessionId);
+      if (!session) {
+        return res.status(404).json({
+          success: false,
+          message: "Upload session không tồn tại",
+        });
+      }
+
+      // Kiểm tra quyền
+      if (session.user_id !== req.user.id && req.user.username !== "admin") {
+        return res.status(403).json({
+          success: false,
+          message: "Bạn không có quyền hoàn thành session này",
+        });
+      }
+
+      // Kiểm tra tất cả chunks đã upload
+      const uploadedChunks = await db.getUploadedChunks(sessionId);
+      const expectedChunks = Math.ceil(session.total_size / CHUNK_SIZE);
+
+      if (uploadedChunks.length !== expectedChunks) {
+        return res.status(400).json({
+          success: false,
+          message: `Chưa upload đủ chunks! ${uploadedChunks.length}/${expectedChunks}`,
+        });
+      }
+
+      // Di chuyển file từ temp sang uploads
+      const tempFilePath = session.temp_file_path;
+      const finalFileName = `${Date.now()}_${Math.random()
+        .toString(36)
+        .substr(2, 9)}_${session.original_filename}`;
+      const finalFilePath = path.join(UPLOAD_DIR, finalFileName);
+
+      fs.renameSync(tempFilePath, finalFilePath);
+
+      // Cập nhật database với video URL
+      const videoUrl = `/uploads/${finalFileName}`;
+      await db.updateMovie(movieId, { intro_video_url: videoUrl });
+      await db.completeVideoUploadSession(sessionId);
+
+      const updatedMovie = await db.getMovieById(movieId);
+
+      // Broadcast update
+      io.emit("movie-updated", {
+        message: `Admin ${req.user.username} vừa upload video demo cho phim: ${updatedMovie.title}`,
+        movie: updatedMovie,
+      });
+
+      console.log(
+        `✅ Upload completed - Session: ${sessionId} - Video: ${videoUrl}`
+      );
+
+      res.json({
+        success: true,
+        message: "Upload video hoàn thành thành công!",
+        data: {
+          movieId: updatedMovie.id,
+          videoUrl,
+          videoName: session.original_filename,
+          totalSize: session.total_size,
+        },
+      });
+    } catch (error) {
+      console.error("❌ Upload complete error:", error.message);
+      res.status(500).json({
+        success: false,
+        message: error.message,
+      });
+    }
+  }
+);
+
+/**
+ * ENDPOINT: Lấy thông tin upload session (để check progress hoặc resume)
+ * Method: GET
+ * URL: /api/admin/movies/:id/video-upload/status/:sessionId
+ */
+app.get(
+  "/api/admin/movies/:movieId/video-upload/status/:sessionId",
+  authenticateToken,
+  adminOnly,
+  async (req, res) => {
+    try {
+      const { sessionId } = req.params;
+
+      const session = await db.getVideoUploadSession(sessionId);
+      if (!session) {
+        return res.status(404).json({
+          success: false,
+          message: "Session không tồn tại",
+        });
+      }
+
+      // Kiểm tra quyền
+      if (session.user_id !== req.user.id && req.user.username !== "admin") {
+        return res.status(403).json({
+          success: false,
+          message: "Bạn không có quyền truy cập session này",
+        });
+      }
+
+      const uploadedChunks = await db.getUploadedChunks(sessionId);
+      const percentComplete = Math.round(
+        (session.uploaded_size / session.total_size) * 100
+      );
+
+      res.json({
+        success: true,
+        data: {
+          sessionId,
+          uploadedSize: session.uploaded_size,
+          totalSize: session.total_size,
+          chunkSize: session.chunk_size,
+          percentComplete,
+          uploadedChunks: uploadedChunks.length,
+          totalChunks: Math.ceil(session.total_size / CHUNK_SIZE),
+          status: session.status,
+        },
+      });
+    } catch (error) {
+      res.status(500).json({
+        success: false,
+        message: error.message,
+      });
+    }
+  }
+);
 
 // ============================================
 // ERROR HANDLING

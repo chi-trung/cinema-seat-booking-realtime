@@ -204,7 +204,25 @@
               <small>Hỗ trợ JPG, PNG, WEBP (tối đa 5MB)</small>
             </div>
             <div class="form-group">
-              <label>Video intro phim (để trống nếu không thay đổi):</label>
+              <label>Video intro phim:</label>
+              <div
+                id="current-video-info"
+                style="
+                  display: none;
+                  background: #e8f5e9;
+                  padding: 10px;
+                  border-radius: 5px;
+                  margin-bottom: 10px;
+                "
+              >
+                <p style="margin: 0; color: #2e7d32">
+                  ✓ <strong>Video hiện tại:</strong>
+                  <span id="current-video-name"></span>
+                </p>
+                <p style="margin: 5px 0 0 0; font-size: 0.9rem; color: #558b2f">
+                  Chọn file mới để thay thế video hiện tại
+                </p>
+              </div>
               <input type="file" id="edit-intro-video" accept="video/*" />
               <small>Hỗ trợ MP4, WebM, OGG (tối đa 100MB)</small>
               <div
@@ -232,6 +250,179 @@
         </div>
       </div>
 
+      <!-- ===== VIDEO UPLOAD MODAL ===== -->
+      <div id="video-upload-modal" class="modal" style="display: none">
+        <div class="modal-content" style="width: 90%; max-width: 600px">
+          <div class="modal-header">
+            <h2>🎥 Upload Video Demo Phim</h2>
+            <button onclick="closeVideoUploadModal()" class="modal-close">
+              &times;
+            </button>
+          </div>
+          <div class="modal-body" style="padding: 20px">
+            <div class="form-group">
+              <label>Chọn file video:</label>
+              <input
+                type="file"
+                id="video-file-input"
+                accept="video/*"
+                onchange="onVideoFileSelected(event)"
+              />
+              <small style="display: block; margin-top: 5px">
+                Hỗ trợ MP4, WebM, OGG (tối đa 100MB)
+              </small>
+              <div id="file-info" style="margin-top: 10px; display: none">
+                <p><strong>File:</strong> <span id="file-name"></span></p>
+                <p><strong>Kích thước:</strong> <span id="file-size"></span></p>
+              </div>
+            </div>
+
+            <div id="upload-controls" style="display: none; margin-top: 20px">
+              <div class="progress-container" style="margin-bottom: 15px">
+                <label style="display: block; margin-bottom: 8px">
+                  Tiến trình upload:
+                </label>
+                <div
+                  class="progress-bar"
+                  style="height: 30px; border-radius: 5px"
+                >
+                  <div
+                    id="upload-progress-bar"
+                    class="progress-fill"
+                    style="
+                      height: 100%;
+                      border-radius: 5px;
+                      display: flex;
+                      align-items: center;
+                      justify-content: center;
+                      color: white;
+                      font-weight: bold;
+                      transition: width 0.3s;
+                    "
+                  >
+                    <span id="progress-text">0%</span>
+                  </div>
+                </div>
+              </div>
+
+              <div
+                id="upload-details"
+                style="
+                  background: rgba(0, 0, 0, 0.3);
+                  padding: 15px;
+                  border-radius: 5px;
+                  margin-bottom: 15px;
+                  border: 1px solid rgba(255, 255, 255, 0.1);
+                "
+              >
+                <div
+                  style="
+                    display: grid;
+                    grid-template-columns: 1fr 1fr;
+                    gap: 15px;
+                    font-size: 0.9rem;
+                  "
+                >
+                  <div>
+                    <p style="margin: 0 0 5px 0; color: #aaa">Uploaded:</p>
+                    <p
+                      style="
+                        margin: 0;
+                        font-weight: bold;
+                        color: #4caf50;
+                        font-size: 1rem;
+                      "
+                      id="uploaded-size"
+                    >
+                      0 MB / 0 MB
+                    </p>
+                  </div>
+                  <div>
+                    <p style="margin: 0 0 5px 0; color: #aaa">Speed:</p>
+                    <p
+                      style="
+                        margin: 0;
+                        font-weight: bold;
+                        color: #4caf50;
+                        font-size: 1rem;
+                      "
+                      id="upload-speed"
+                    >
+                      0 MB/s
+                    </p>
+                  </div>
+                  <div>
+                    <p style="margin: 0 0 5px 0; color: #aaa">Chunks:</p>
+                    <p
+                      style="
+                        margin: 0;
+                        font-weight: bold;
+                        color: #4caf50;
+                        font-size: 1rem;
+                      "
+                      id="chunks-info"
+                    >
+                      0 / 0
+                    </p>
+                  </div>
+                  <div>
+                    <p style="margin: 0 0 5px 0; color: #aaa">ETA:</p>
+                    <p
+                      style="
+                        margin: 0;
+                        font-weight: bold;
+                        color: #4caf50;
+                        font-size: 1rem;
+                      "
+                      id="time-remaining"
+                    >
+                      --:--
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <div
+                id="upload-status-message"
+                style="
+                  padding: 10px;
+                  border-radius: 5px;
+                  margin-bottom: 15px;
+                  display: none;
+                "
+              ></div>
+
+              <div id="upload-buttons" style="display: flex; gap: 10px">
+                <button
+                  id="start-upload-btn"
+                  onclick="startVideoUpload()"
+                  class="btn-primary"
+                  style="flex: 1"
+                >
+                  Bắt đầu Upload
+                </button>
+                <button
+                  id="pause-upload-btn"
+                  onclick="pauseVideoUpload()"
+                  class="btn-secondary"
+                  style="flex: 1; display: none"
+                >
+                  Tạm dừng
+                </button>
+                <button
+                  id="cancel-upload-btn"
+                  onclick="cancelVideoUpload()"
+                  class="btn-secondary"
+                  style="flex: 1"
+                >
+                  Hủy
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <!-- ===== CONNECTION STATUS ===== -->
       <div id="connection-status" class="status-bar">
         <span id="status-indicator">⚪</span>
@@ -254,6 +445,32 @@
           <button onclick="goBackToMovies()" class="btn-secondary">
             ← Quay lại
           </button>
+        </div>
+
+        <!-- ===== VIDEO DEMO SECTION ===== -->
+        <div id="video-demo-section" style="display: none; margin-bottom: 20px">
+          <h3 style="margin-top: 0; margin-bottom: 10px">🎥 Video Demo Phim</h3>
+          <div
+            style="
+              background: rgba(0, 0, 0, 0.5);
+              border-radius: 8px;
+              overflow: hidden;
+              border: 1px solid rgba(229, 9, 20, 0.3);
+            "
+          >
+            <video
+              id="demo-video-player"
+              style="
+                width: 100%;
+                height: auto;
+                max-height: 400px;
+                background: #000;
+                display: block;
+              "
+              controls
+              controlsList="nodownload"
+            ></video>
+          </div>
         </div>
 
         <div class="screen">🎬 MÀN HÌNH 🎬</div>

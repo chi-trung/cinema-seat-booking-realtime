@@ -121,6 +121,39 @@ const initializeDatabase = async () => {
       )
     `);
 
+    // VIDEO_UPLOAD_SESSIONS TABLE - Lưu trạng thái upload session
+    await dbRun(`
+      CREATE TABLE IF NOT EXISTS video_upload_sessions (
+        id TEXT PRIMARY KEY,
+        movie_id INTEGER NOT NULL,
+        user_id INTEGER NOT NULL,
+        original_filename TEXT NOT NULL,
+        total_size INTEGER NOT NULL,
+        uploaded_size INTEGER DEFAULT 0,
+        chunk_size INTEGER DEFAULT 1048576,
+        temp_file_path TEXT NOT NULL,
+        status TEXT DEFAULT 'in_progress',
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (movie_id) REFERENCES movies(id) ON DELETE CASCADE,
+        FOREIGN KEY (user_id) REFERENCES users(id)
+      )
+    `);
+
+    // VIDEO_CHUNKS TABLE - Lưu trạng thái chunks đã upload
+    await dbRun(`
+      CREATE TABLE IF NOT EXISTS video_chunks (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        session_id TEXT NOT NULL,
+        chunk_index INTEGER NOT NULL,
+        chunk_size INTEGER NOT NULL,
+        checksum TEXT,
+        uploaded_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (session_id) REFERENCES video_upload_sessions(id) ON DELETE CASCADE,
+        UNIQUE(session_id, chunk_index)
+      )
+    `);
+
     // CREATE INDEXES
     await dbRun(
       `CREATE INDEX IF NOT EXISTS idx_bookings_user ON bookings(user_id)`
@@ -132,6 +165,15 @@ const initializeDatabase = async () => {
       `CREATE INDEX IF NOT EXISTS idx_seats_movie ON seats(movie_id)`
     );
     await dbRun(`CREATE INDEX IF NOT EXISTS idx_movies_date ON movies(date)`);
+    await dbRun(
+      `CREATE INDEX IF NOT EXISTS idx_video_sessions_movie ON video_upload_sessions(movie_id)`
+    );
+    await dbRun(
+      `CREATE INDEX IF NOT EXISTS idx_video_sessions_user ON video_upload_sessions(user_id)`
+    );
+    await dbRun(
+      `CREATE INDEX IF NOT EXISTS idx_video_chunks_session ON video_chunks(session_id)`
+    );
 
     console.log("✅ Database tables initialized");
 
@@ -232,7 +274,16 @@ async function getMovieById(movieId) {
 }
 
 async function updateMovie(movieId, data) {
-  const { title, description, time, date, theater, price, poster_url } = data;
+  const {
+    title,
+    description,
+    time,
+    date,
+    theater,
+    price,
+    poster_url,
+    intro_video_url,
+  } = data;
 
   const updates = [];
   const params = [];
@@ -264,6 +315,10 @@ async function updateMovie(movieId, data) {
   if (poster_url !== undefined) {
     updates.push("poster_url = ?");
     params.push(poster_url);
+  }
+  if (intro_video_url !== undefined) {
+    updates.push("intro_video_url = ?");
+    params.push(intro_video_url);
   }
 
   if (updates.length === 0) {
@@ -378,6 +433,133 @@ async function getAllBookings() {
 }
 
 // ============================================
+// VIDEO UPLOAD SESSIONS - Resumable Upload
+// ============================================
+
+/**
+ * Tạo một upload session mới
+ * Kiến thức lập trình mạng: Session ID cho phép resume upload sau khi disconnect
+ */
+async function createVideoUploadSession(
+  movieId,
+  userId,
+  filename,
+  totalSize,
+  chunkSize = 1048576
+) {
+  const sessionId = `${movieId}_${userId}_${Date.now()}`;
+  const tempFilePath = path.join(__dirname, `../uploads/temp/${sessionId}`);
+
+  try {
+    await dbRun(
+      `
+      INSERT INTO video_upload_sessions 
+      (id, movie_id, user_id, original_filename, total_size, uploaded_size, chunk_size, temp_file_path, status)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `,
+      [
+        sessionId,
+        movieId,
+        userId,
+        filename,
+        totalSize,
+        0,
+        chunkSize,
+        tempFilePath,
+        "in_progress",
+      ]
+    );
+
+    return sessionId;
+  } catch (error) {
+    throw new Error(`Lỗi tạo upload session: ${error.message}`);
+  }
+}
+
+/**
+ * Lấy thông tin session upload
+ */
+async function getVideoUploadSession(sessionId) {
+  return await dbGet(`SELECT * FROM video_upload_sessions WHERE id = ?`, [
+    sessionId,
+  ]);
+}
+
+/**
+ * Lưu chunk đã upload
+ */
+async function saveUploadedChunk(sessionId, chunkIndex, chunkSize, checksum) {
+  try {
+    await dbRun(
+      `
+      INSERT INTO video_chunks (session_id, chunk_index, chunk_size, checksum)
+      VALUES (?, ?, ?, ?)
+    `,
+      [sessionId, chunkIndex, chunkSize, checksum]
+    );
+
+    // Cập nhật uploaded_size
+    const uploadedChunks = await dbAll(
+      `SELECT SUM(chunk_size) as total FROM video_chunks WHERE session_id = ?`,
+      [sessionId]
+    );
+
+    const uploadedSize = uploadedChunks[0].total || 0;
+
+    await dbRun(
+      `UPDATE video_upload_sessions SET uploaded_size = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+      [uploadedSize, sessionId]
+    );
+
+    return uploadedSize;
+  } catch (error) {
+    throw new Error(`Lỗi lưu chunk: ${error.message}`);
+  }
+}
+
+/**
+ * Lấy danh sách chunks đã upload
+ */
+async function getUploadedChunks(sessionId) {
+  return await dbAll(
+    `SELECT * FROM video_chunks WHERE session_id = ? ORDER BY chunk_index ASC`,
+    [sessionId]
+  );
+}
+
+/**
+ * Hoàn thành upload session
+ */
+async function completeVideoUploadSession(sessionId) {
+  try {
+    await dbRun(
+      `UPDATE video_upload_sessions SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+      ["completed", sessionId]
+    );
+  } catch (error) {
+    throw new Error(`Lỗi hoàn thành session: ${error.message}`);
+  }
+}
+
+/**
+ * Hủy upload session
+ */
+async function cancelVideoUploadSession(sessionId) {
+  try {
+    const session = await getVideoUploadSession(sessionId);
+    if (session && fs.existsSync(session.temp_file_path)) {
+      fs.unlinkSync(session.temp_file_path);
+    }
+
+    await dbRun(`DELETE FROM video_chunks WHERE session_id = ?`, [sessionId]);
+
+    await dbRun(`DELETE FROM video_upload_sessions WHERE id = ?`, [sessionId]);
+  } catch (error) {
+    throw new Error(`Lỗi hủy session: ${error.message}`);
+  }
+}
+
+// ============================================
 // SEED DATA
 // ============================================
 
@@ -434,4 +616,11 @@ module.exports = {
   createBooking,
   getUserBookings,
   getAllBookings,
+  // Video upload functions
+  createVideoUploadSession,
+  getVideoUploadSession,
+  saveUploadedChunk,
+  getUploadedChunks,
+  completeVideoUploadSession,
+  cancelVideoUploadSession,
 };

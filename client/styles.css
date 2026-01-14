@@ -365,6 +365,96 @@ main {
 }
 
 /* ============================================
+   ADMIN BUTTONS - FIX FOR FULL DISPLAY
+   ============================================ */
+
+.movie-card .admin-buttons {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0 12px 12px;
+  padding: 0;
+}
+
+.movie-card .admin-buttons button {
+  width: 100%;
+  padding: 10px 8px;
+  border: none;
+  border-radius: 5px;
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: all 0.3s;
+  font-weight: 500;
+  white-space: normal;
+  word-wrap: break-word;
+  min-height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.btn-upload,
+.btn-has-video {
+  background: #e74c3c !important;
+  color: white !important;
+}
+
+.btn-upload:hover,
+.btn-has-video:hover {
+  transform: translateY(-1px);
+}
+
+.btn-has-video {
+  background-color: #27ae60 !important;
+}
+
+.btn-has-video:hover {
+  background-color: #229954 !important;
+}
+
+.btn-upload:hover {
+  background-color: #c0392b !important;
+}
+
+.movie-card .btn-edit {
+  background: #2196f3;
+  color: white;
+}
+
+.movie-card .btn-edit:hover {
+  background: #1976d2;
+  transform: translateY(-1px);
+}
+
+.movie-card .btn-delete {
+  background: #f44336;
+  color: white;
+}
+
+.movie-card .btn-delete:hover {
+  background: #da190b;
+  transform: translateY(-1px);
+}
+
+.movie-card .btn-primary[style*="background-color: #27ae60"] {
+  background-color: #27ae60 !important;
+  font-size: 0.8rem;
+}
+
+.movie-card .btn-primary[style*="background-color: #27ae60"]:hover {
+  background-color: #229954 !important;
+}
+
+.movie-card .btn-primary[style*="background-color: #e74c3c"] {
+  background-color: #e74c3c !important;
+  font-size: 0.8rem;
+}
+
+.movie-card .btn-primary[style*="background-color: #e74c3c"]:hover {
+  background-color: #c0392b !important;
+}
+
+/* ============================================
    SEATS SECTION
    ============================================ */
 
@@ -689,6 +779,7 @@ footer p {
 
 .admin-buttons {
   display: flex;
+  flex-direction: column;
   gap: 8px;
   margin-top: 10px;
 }
@@ -696,13 +787,19 @@ footer p {
 .btn-edit,
 .btn-delete {
   flex: 1;
-  padding: 8px 12px;
+  padding: 10px 12px;
   border: none;
   border-radius: 5px;
   font-size: 0.9rem;
   cursor: pointer;
   transition: all 0.3s;
   font-weight: 500;
+  min-height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  white-space: normal;
+  word-wrap: break-word;
 }
 
 .btn-edit {
@@ -773,7 +870,7 @@ footer p {
 
 .progress-bar {
   width: 100%;
-  height: 20px;
+  height: 30px;
   background: rgba(255, 255, 255, 0.1);
   border-radius: 10px;
   overflow: hidden;
@@ -788,7 +885,34 @@ footer p {
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 0.75rem;
+  font-size: 0.9rem;
   color: white;
   font-weight: bold;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+}
+
+/* ============================================
+   UPLOAD DETAILS STYLING
+   ============================================ */
+
+#upload-details {
+  background: #2a2a2a !important;
+  color: #fff !important;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+#upload-details p {
+  color: inherit !important;
+}
+
+#upload-details p[style*="color: #666"] {
+  color: #aaa !important;
+}
+
+#uploaded-size,
+#upload-speed,
+#chunks-info,
+#time-remaining {
+  color: #4caf50 !important;
+  font-size: 1rem !important;
 }
