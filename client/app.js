@@ -849,7 +849,6 @@ function renderMovies(movieList) {
     div.className = "movie-card";
 
     // Hiển thị nút sửa/xóa nếu user là admin
-    // Chỉ hiển thị nút "Upload Video" nếu phim CHƯA có video
     const uploadVideoButton = !movie.intro_video_url
       ? `<button onclick="openUploadVideoModal(${movie.id})" class="btn-upload" title="Upload video demo">🎥 Upload Video</button>`
       : `<button onclick="openEditModal(${movie.id})" class="btn-has-video" title="Video demo được lưu - Edit để thay đổi">✓ Có video demo</button>`;
@@ -862,10 +861,11 @@ function renderMovies(movieList) {
         <button onclick="openEditModal(${
           movie.id
         })" class="btn-edit" title="Sửa phim">✏️ Sửa</button>
+        
         <button onclick="deleteMovieConfirm(${movie.id}, '${movie.title.replace(
             /'/g,
             "\\'"
-          )}'" class="btn-delete" title="Xóa phim">🗑️ Xóa</button>
+          )}')" class="btn-delete" title="Xóa phim">🗑️ Xóa</button>
       </div>
     `
         : "";

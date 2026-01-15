@@ -1104,6 +1104,15 @@ app.post(
         });
       }
 
+      // ============================================================
+      // <=== ⏳ ĐOẠN CODE DELAY 10S ĐƯỢC THÊM VÀO ĐÂY ===>
+      // ============================================================
+      console.log(
+        `⏳ [TEST] Đang delay 10 giây xử lý chunk số ${chunkIndex}...`
+      );
+      await new Promise((resolve) => setTimeout(resolve, 10000));
+      // ============================================================
+
       // Lấy session info
       const session = await db.getVideoUploadSession(sessionId);
       if (!session) {
