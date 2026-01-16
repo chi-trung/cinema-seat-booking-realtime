@@ -154,6 +154,20 @@ const initializeDatabase = async () => {
       )
     `);
 
+    // CHAT MESSAGES TABLE
+    await dbRun(`
+      CREATE TABLE IF NOT EXISTS chat_messages (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        sender_id INTEGER NOT NULL,
+        receiver_id INTEGER NOT NULL,
+        message TEXT NOT NULL,
+        is_read INTEGER DEFAULT 0,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (sender_id) REFERENCES users(id) ON DELETE CASCADE,
+        FOREIGN KEY (receiver_id) REFERENCES users(id) ON DELETE CASCADE
+      )
+    `);
+
     // CREATE INDEXES
     await dbRun(
       `CREATE INDEX IF NOT EXISTS idx_bookings_user ON bookings(user_id)`
@@ -173,6 +187,9 @@ const initializeDatabase = async () => {
     );
     await dbRun(
       `CREATE INDEX IF NOT EXISTS idx_video_chunks_session ON video_chunks(session_id)`
+    );
+    await dbRun(
+      `CREATE INDEX IF NOT EXISTS idx_chat_messages_conversation ON chat_messages(sender_id, receiver_id)`
     );
 
     console.log("✅ Database tables initialized");
@@ -560,6 +577,52 @@ async function cancelVideoUploadSession(sessionId) {
 }
 
 // ============================================
+// CHAT FUNCTIONS
+// ============================================
+
+async function createChatMessage(senderId, receiverId, message) {
+  const result = await dbRun(
+    `INSERT INTO chat_messages (sender_id, receiver_id, message) VALUES (?, ?, ?)`,
+    [senderId, receiverId, message]
+  );
+  return await dbGet(`
+    SELECT cm.*, u.username as sender_name
+    FROM chat_messages cm
+    JOIN users u ON cm.sender_id = u.id
+    WHERE cm.id = ?
+  `, [result.lastID]);
+}
+
+async function getConversation(userId, adminId) {
+    await dbRun(
+        `UPDATE chat_messages SET is_read = 1 WHERE sender_id = ? AND receiver_id = ? AND is_read = 0`,
+        [userId, adminId]
+    );
+    return await dbAll(`
+        SELECT cm.*, sender.username as sender_name
+        FROM chat_messages cm
+        JOIN users sender ON cm.sender_id = sender.id
+        WHERE (cm.sender_id = ? AND cm.receiver_id = ?) OR (cm.sender_id = ? AND receiver_id = ?)
+        ORDER BY cm.created_at ASC
+    `, [userId, adminId, adminId, userId]);
+}
+
+async function getConversationList(adminId) {
+    return await dbAll(`
+        SELECT
+            u.id as user_id,
+            u.username,
+            MAX(cm.created_at) AS last_message_time,
+            SUM(CASE WHEN cm.is_read = 0 AND cm.receiver_id = ? THEN 1 ELSE 0 END) AS unread_count
+        FROM chat_messages cm
+        JOIN users u ON cm.sender_id = u.id
+        WHERE cm.receiver_id = ?
+        GROUP BY u.id, u.username
+        ORDER BY last_message_time DESC
+    `, [adminId, adminId]);
+}
+
+// ============================================
 // SEED DATA
 // ============================================
 
@@ -623,4 +686,8 @@ module.exports = {
   getUploadedChunks,
   completeVideoUploadSession,
   cancelVideoUploadSession,
+  // Chat functions
+  createChatMessage,
+  getConversation,
+  getConversationList,
 };

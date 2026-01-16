@@ -916,3 +916,124 @@ footer p {
   color: #4caf50 !important;
   font-size: 1rem !important;
 }
+
+/* ============================================
+   CHAT WIDGET
+   ============================================ */
+
+#chat-widget {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  z-index: 1001;
+}
+
+#chat-bubble {
+  width: 60px;
+  height: 60px;
+  background: var(--primary-color);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 2rem;
+  cursor: pointer;
+  box-shadow: 0 4px 10px rgba(0,0,0,0.3);
+  transition: transform 0.2s;
+}
+
+#chat-bubble:hover {
+  transform: scale(1.1);
+}
+
+#chat-window {
+  width: 350px;
+  height: 450px;
+  background: var(--card-bg);
+  border-radius: var(--border-radius);
+  box-shadow: 0 5px 15px rgba(0,0,0,0.4);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+#chat-header {
+  padding: 15px;
+  background: var(--secondary-color);
+  font-weight: bold;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+#close-chat {
+  background: none;
+  border: none;
+  color: white;
+  font-size: 1.5rem;
+  cursor: pointer;
+}
+
+#chat-messages {
+  flex-grow: 1;
+  padding: 15px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.chat-message {
+  padding: 10px 15px;
+  border-radius: 15px;
+  max-width: 80%;
+  line-height: 1.4;
+}
+
+.chat-message.sent {
+  background: var(--primary-color);
+  color: white;
+  align-self: flex-end;
+  border-bottom-right-radius: 3px;
+}
+
+.chat-message.received {
+  background: #3a3a3a;
+  align-self: flex-start;
+  border-bottom-left-radius: 3px;
+}
+
+#chat-input-container {
+  display: flex;
+  padding: 10px;
+  border-top: 1px solid rgba(255,255,255,0.1);
+}
+
+#chat-input {
+  flex-grow: 1;
+  border: none;
+  background: #3a3a3a;
+  padding: 12px;
+  border-radius: 20px;
+  color: white;
+}
+
+#chat-input:focus {
+  outline: none;
+}
+
+#chat-send {
+  background: none;
+  border: none;
+  color: var(--primary-color);
+  font-size: 1.5rem;
+  cursor: pointer;
+  padding: 0 15px;
+}
+#conversation-list li {
+    background: #3a3a3a;
+    padding: 10px;
+    border-radius: 5px;
+    margin-bottom: 5px;
+    cursor: pointer;
+}

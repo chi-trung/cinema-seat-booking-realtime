@@ -6,7 +6,7 @@
  * Kiến thức lập trình mạng được thể hiện:
  * 1. Client-Server Architecture: Server xử lý logic, client hiển thị UI
  * 2. HTTP REST API: GET/POST endpoints để quản lý dữ liệu
- * 3. WebSocket: Socket.io để cập nhật real-time trạng thái ghế
+ * 3. WebSocket: Socket.io để cập nhật real-time trạng thái ghế và chat
  * 4. Authentication: JWT token + Bcrypt password hashing (Security)
  * 5. File Upload: Multipart/form-data cho admin upload phim
  * 6. Database Persistence: SQLite thay vì in-memory storage
@@ -173,6 +173,7 @@ function adminOnly(req, res, next) {
 // ============================================
 
 const connectedClients = new Map(); // socketId -> { userId, movieId, userName }
+const userSockets = {}; // userId -> socketId (for chat)
 
 // ============================================
 // HTTP REST API ENDPOINTS
@@ -866,6 +867,8 @@ app.use("/uploads", express.static(UPLOAD_DIR));
 io.on("connection", (socket) => {
   console.log(`🔌 WebSocket: Client connected [ID: ${socket.id}]`);
 
+  let currentUserId = null;
+
   /**
    * EVENT 1: Client tham gia xem phim
    * Kiến thức: Socket.io rooms - grouping clients
@@ -947,12 +950,82 @@ io.on("connection", (socket) => {
     }
   });
 
+  // ============================================
+  // CHAT HANDLERS
+  // ============================================
+
+  socket.on("join-chat", async (data) => {
+    const { userId, token } = data;
+    if (!userId || !token) return;
+
+    try {
+      const decoded = jwt.verify(token, JWT_SECRET);
+      if (decoded.id !== userId) return;
+
+      currentUserId = userId;
+      userSockets[userId] = socket.id;
+      console.log(`💬 User ${userId} joined chat`);
+
+      const admin = await db.getUserByUsername("admin");
+      if (!admin) return;
+
+      const messages = await db.getConversation(userId, admin.id);
+      socket.emit("chat-history", messages);
+    } catch (error) {
+      console.error("Chat join error:", error.message);
+    }
+  });
+
+  socket.on("send-message", async (data) => {
+    const { senderId, receiverId, message, token } = data;
+    if (!senderId || !receiverId || !message || !token) return;
+
+    try {
+      const decoded = jwt.verify(token, JWT_SECRET);
+      if (decoded.id !== senderId) return;
+
+      const chatMessage = await db.createChatMessage(senderId, receiverId, message);
+
+      // Send to receiver if online
+      const receiverSocketId = userSockets[receiverId];
+      if (receiverSocketId) {
+        io.to(receiverSocketId).emit("new-message", chatMessage);
+      }
+
+      // Send back to sender
+      socket.emit("new-message", chatMessage);
+
+    } catch (error) {
+      console.error("Send message error:", error.message);
+    }
+  });
+
+  socket.on("admin-get-conversations", async (data) => {
+    const { adminId, token } = data;
+    if (!adminId || !token) return;
+
+    try {
+      const decoded = jwt.verify(token, JWT_SECRET);
+      if (decoded.id !== adminId || decoded.role !== 'admin') return;
+
+      const conversations = await db.getConversationList(adminId);
+      socket.emit("conversation-list", conversations);
+
+    } catch (error) {
+      console.error("Get conversations error:", error.message);
+    }
+  });
+
   /**
    * EVENT 4: Client disconnect
    * Tự động release các ghế đã chọn
    */
   socket.on("disconnect", () => {
     console.log(`❌ WebSocket: Client disconnected [ID: ${socket.id}]`);
+
+    if (currentUserId) {
+      delete userSockets[currentUserId];
+    }
 
     const clientInfo = connectedClients.get(socket.id);
 
@@ -1396,6 +1469,7 @@ server.listen(PORT, () => {
   console.log("   ✓ Role-based Access Control");
   console.log("   ✓ Real-time Synchronization");
   console.log("   ✓ Connection Management");
+  console.log("   ✓ Real-time Chat (Customer Support)");
   console.log("=".repeat(70));
   console.log("🧪 Test Accounts:");
   console.log("   Admin: admin / admin123");

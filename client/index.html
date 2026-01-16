@@ -150,6 +150,10 @@
             Upload phim
           </button>
         </div>
+        <div id="admin-chat-section" style="display: none;">
+            <h3>Danh sách tin nhắn</h3>
+            <ul id="conversation-list"></ul>
+        </div>
       </section>
 
       <!-- ===== EDIT MOVIE MODAL ===== -->
@@ -516,6 +520,24 @@
         <div id="logs" class="logs-container"></div>
       </section>
     </main>
+
+    <!-- ===== CHAT FEATURE ===== -->
+    <div id="chat-widget" style="display: none;">
+        <div id="chat-bubble" onclick="toggleChat()">
+            💬
+        </div>
+        <div id="chat-window" style="display: none;">
+            <div id="chat-header">
+                Hỗ trợ khách hàng
+                <button id="close-chat" onclick="toggleChat()">&times;</button>
+            </div>
+            <div id="chat-messages"></div>
+            <div id="chat-input-container">
+                <input type="text" id="chat-input" placeholder="Nhập tin nhắn..." onkeydown="handleChatInput(event)">
+                <button id="chat-send" onclick="sendChatMessage()">Gửi</button>
+            </div>
+        </div>
+    </div>
 
     <!-- Footer -->
     <footer>
