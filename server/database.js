@@ -608,18 +608,31 @@ async function getConversation(userId, adminId) {
 }
 
 async function getConversationList(adminId) {
-    return await dbAll(`
+    const conversations = await dbAll(`
         SELECT
-            u.id as user_id,
-            u.username,
-            MAX(cm.created_at) AS last_message_time,
+            u.id as userId,
+            u.username as userName,
+            MAX(cm.created_at) AS lastMessageTime,
             SUM(CASE WHEN cm.is_read = 0 AND cm.receiver_id = ? THEN 1 ELSE 0 END) AS unread_count
         FROM chat_messages cm
-        JOIN users u ON cm.sender_id = u.id
-        WHERE cm.receiver_id = ?
+        JOIN users u ON cm.sender_id = u.id OR cm.receiver_id = u.id
+        WHERE (cm.receiver_id = ? OR cm.sender_id = ?) AND (u.id != ?)
         GROUP BY u.id, u.username
-        ORDER BY last_message_time DESC
-    `, [adminId, adminId]);
+        ORDER BY lastMessageTime DESC
+        LIMIT 50
+    `, [adminId, adminId, adminId, adminId]);
+
+    // Lấy last message cho mỗi conversation
+    for (let conv of conversations) {
+        const lastMsg = await dbGet(`
+            SELECT message FROM chat_messages
+            WHERE (sender_id = ? AND receiver_id = ?) OR (sender_id = ? AND receiver_id = ?)
+            ORDER BY created_at DESC LIMIT 1
+        `, [conv.userId, adminId, adminId, conv.userId]);
+        conv.lastMessage = lastMsg ? lastMsg.message.substring(0, 50) : "Không có tin nhắn";
+    }
+
+    return conversations;
 }
 
 // ============================================

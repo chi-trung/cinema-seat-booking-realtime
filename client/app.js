@@ -23,6 +23,11 @@ let selectedSeats = new Set();
 let movies = [];
 let currentMoviePrice = 0;
 
+// ===== CHAT VARIABLES =====
+let chatOpen = false;
+let currentConversationId = null;
+let currentAdminId = null;
+
 const API_BASE = "http://localhost:3000/api";
 
 // ============================================
@@ -143,11 +148,24 @@ function loginSuccess(user, token) {
   // Hiển thị upload form nếu là admin
   if (userRole === "admin") {
     document.getElementById("admin-section").style.display = "block";
+    document.getElementById("admin-chat-section").style.display = "block";
+  }
+
+  // Hiển thị chat widget cho người dùng
+  if (userRole === "user") {
+    document.getElementById("chat-widget").style.display = "block";
   }
 
   // Kết nối WebSocket và load movies
   initializeWebSocket();
   loadMovies();
+  
+  // Nếu là admin, load danh sách cuộc trò chuyện
+  if (userRole === "admin") {
+    setTimeout(() => {
+      requestConversationList();
+    }, 500);
+  }
 }
 
 /**
@@ -178,6 +196,11 @@ async function restoreSession() {
 
       if (userRole === "admin") {
         document.getElementById("admin-section").style.display = "block";
+        document.getElementById("admin-chat-section").style.display = "block";
+        // Load conversations sau khi WebSocket connect
+        setTimeout(() => {
+          requestConversationList();
+        }, 500);
       }
 
       initializeWebSocket();
@@ -212,6 +235,8 @@ function logout() {
 
   document.getElementById("user-section").style.display = "none";
   document.getElementById("admin-section").style.display = "none";
+  document.getElementById("admin-chat-section").style.display = "none";
+  document.getElementById("chat-widget").style.display = "none";
   document.getElementById("movies-section").style.display = "none";
   document.getElementById("seats-section").style.display = "none";
   document.getElementById("auth-section").style.display = "block";
@@ -235,11 +260,16 @@ function initializeWebSocket() {
 
   socket = io("http://localhost:3000", {
     transports: ["websocket", "polling"],
+    reconnectionDelay: 1000,
+    reconnection: true,
+    reconnectionAttempts: 5,
   });
 
   socket.on("connect", () => {
     log("✅ WebSocket đã kết nối thành công!", "success");
     updateConnectionStatus(true);
+    setupSocketListeners();  // Setup listeners sau khi connect
+    startPingPong();  // Start ping-pong
   });
 
   socket.on("disconnect", () => {
@@ -251,8 +281,23 @@ function initializeWebSocket() {
     log(`⚠️ Lỗi kết nối: ${error.message}`, "error");
     updateConnectionStatus(false);
   });
+}
 
-  // Real-time events
+/**
+ * Setup socket event listeners
+ * Called after socket connects successfully
+ */
+function setupSocketListeners() {
+  if (!socket) return;
+  socket.on("chat-history", (data) => {
+    if (!data || !data.messages) {
+      log(`⚠️ chat-history data invalid`, "error");
+      return;
+    }
+    log(`📨 Nhận lịch sử chat: ${data.messages.length} tin nhắn`, "info");
+    renderChatMessages(data.messages);
+  });
+  
   socket.on("seats-updated", (data) => {
     log(`🔄 Nhận cập nhật ghế real-time cho phim ${data.movieId}`, "info");
     if (data.movieId === currentMovieId) {
@@ -288,8 +333,45 @@ function initializeWebSocket() {
     alert(data.message);
   });
 
-  // Ping-pong
-  setInterval(() => {
+  // ===== CHAT EVENTS =====
+  socket.on("chat-history", (data) => {
+    log(`📨 Received chat-history event`, "info");
+    if (!data || !data.messages) {
+      log(`⚠️ chat-history data invalid: ${JSON.stringify(data)}`, "error");
+      return;
+    }
+    log(`📨 Nhận lịch sử chat: ${data.messages.length} tin nhắn`, "info");
+    renderChatMessages(data.messages);
+  });
+
+  socket.on("new-message", (data) => {
+    log(`💬 Tin nhắn mới từ ${data.senderName}`, "info");
+    addChatMessage(data);
+  });
+
+  socket.on("admin-joined", (data) => {
+    log(`👨‍💼 Admin ${data.adminName} đã tham gia`, "success");
+    const messageElement = document.getElementById("chat-messages");
+    if (messageElement) {
+      const systemMsg = document.createElement("div");
+      systemMsg.className = "chat-message system-message";
+      systemMsg.innerHTML = `<em>👨‍💼 ${data.adminName} đã tham gia cuộc trò chuyện</em>`;
+      messageElement.appendChild(systemMsg);
+      messageElement.scrollTop = messageElement.scrollHeight;
+    }
+  });
+
+  socket.on("conversation-list", (data) => {
+    log(`📋 Danh sách ${data.conversations.length} cuộc trò chuyện`, "info");
+    renderConversationList(data.conversations);
+  });
+}
+
+// Ping-pong (run once outside socket listeners)
+let pingInterval = null;
+function startPingPong() {
+  if (pingInterval) clearInterval(pingInterval);
+  pingInterval = setInterval(() => {
     if (socket && socket.connected) {
       socket.emit("ping");
     }
@@ -1480,4 +1562,262 @@ function showUploadStatusMessage(message, type) {
     element.style.color = "#856404";
     element.style.border = "1px solid #ffeaa7";
   }
+}
+
+// ============================================
+// CHAT FEATURE - Kiến thức lập trình mạng
+// ============================================
+// WebSocket: Gửi tin nhắn real-time
+// Pub-Sub pattern: Admin subscribe tất cả conversations
+// Message persistence: Lưu vào database
+// User isolation: Mỗi user chỉ thấy conversation của mình
+
+/**
+ * Toggle chat window
+ */
+function toggleChat() {
+  const chatWindow = document.getElementById("chat-window");
+  const chatBubble = document.getElementById("chat-bubble");
+  
+  if (!chatWindow) return;
+  
+  chatOpen = !chatOpen;
+  
+  if (chatOpen) {
+    chatWindow.style.display = "block";
+    chatBubble.style.opacity = "0.5";
+    
+    // Load chat history nếu chưa có conversation
+    if (!currentConversationId && socket && socket.connected) {
+      socket.emit("join-chat", {
+        userId: userId,
+        userName: userName,
+      });
+    }
+    
+    // Focus input
+    setTimeout(() => {
+      document.getElementById("chat-input").focus();
+    }, 100);
+  } else {
+    chatWindow.style.display = "none";
+    chatBubble.style.opacity = "1";
+  }
+}
+
+/**
+ * Xử lý input chat (Enter để gửi)
+ */
+function handleChatInput(event) {
+  if (event.key === "Enter" && !event.shiftKey) {
+    event.preventDefault();
+    sendChatMessage();
+  }
+}
+
+/**
+ * Gửi tin nhắn chat
+ */
+function sendChatMessage() {
+  const input = document.getElementById("chat-input");
+  const message = input.value.trim();
+  
+  if (!message) return;
+  
+  if (!socket || !socket.connected) {
+    alert("❌ Mất kết nối tới server. Vui lòng kiểm tra lại!");
+    return;
+  }
+  
+  // Emit event gửi tin nhắn
+  socket.emit("send-message", {
+    conversationId: currentConversationId,
+    senderId: userId,
+    senderName: userName,
+    message: message,
+    timestamp: new Date().toISOString(),
+  });
+  
+  // Clear input
+  input.value = "";
+  input.focus();
+  
+  log(`💬 Bạn gửi: ${message}`, "info");
+}
+
+/**
+ * Thêm tin nhắn mới vào chat
+ */
+function addChatMessage(data) {
+  // Determine correct container based on role
+  let messagesContainer = null;
+  
+  if (userRole === "admin") {
+    messagesContainer = document.getElementById("admin-chat-messages");
+  } else {
+    messagesContainer = document.getElementById("chat-messages");
+  }
+  
+  if (!messagesContainer) return;
+  
+  const messageEl = document.createElement("div");
+  messageEl.className = `chat-message ${data.senderId === userId ? "user-message" : "admin-message"}`;
+  
+  const time = new Date(data.timestamp || data.created_at).toLocaleTimeString("vi-VN");
+  messageEl.innerHTML = `
+    <div class="chat-message-header">
+      <strong>${data.senderName || data.sender_name}</strong>
+      <span class="chat-time">${time}</span>
+    </div>
+    <div class="chat-message-body">${escapeHtml(data.message)}</div>
+  `;
+  
+  messagesContainer.appendChild(messageEl);
+  messagesContainer.scrollTop = messagesContainer.scrollHeight;
+}
+
+/**
+ * Render chat messages
+ */
+function renderChatMessages(messages) {
+  // Determine correct container based on role
+  let messagesContainer = null;
+  
+  if (userRole === "admin") {
+    messagesContainer = document.getElementById("admin-chat-messages");
+  } else {
+    messagesContainer = document.getElementById("chat-messages");
+  }
+  
+  if (!messagesContainer) return;
+  
+  messagesContainer.innerHTML = "";
+  
+  messages.forEach((msg) => {
+    addChatMessage(msg);
+  });
+}
+
+/**
+ * Render conversation list (cho admin)
+ */
+function renderConversationList(conversations) {
+  const listContainer = document.getElementById("admin-conversations-list");
+  if (!listContainer) return;
+  
+  if (conversations.length === 0) {
+    listContainer.innerHTML = "<p>Chưa có cuộc trò chuyện nào</p>";
+    return;
+  }
+  
+  listContainer.innerHTML = conversations
+    .map((conv) => `
+      <div class="conversation-item" data-user-id="${conv.userId}" data-user-name="${escapeHtml(conv.userName)}" onclick="openConversationFromElement(this)">
+        <div class="conversation-name">${escapeHtml(conv.userName)}</div>
+        <div class="conversation-preview">${escapeHtml(conv.lastMessage)}</div>
+        <div class="conversation-time">${new Date(conv.lastMessageTime).toLocaleString("vi-VN")}</div>
+      </div>
+    `)
+    .join("");
+  
+  log(`📋 Rendered ${conversations.length} conversations`, "info");
+}
+
+/**
+ * Open conversation from clicked element (wrapper function)
+ */
+function openConversationFromElement(element) {
+  const userId = parseInt(element.getAttribute("data-user-id"));
+  const userName = element.getAttribute("data-user-name");
+  
+  log(`🖱️ Clicked conversation: userId=${userId}, userName=${userName}`, "info");
+  
+  openConversation(userId, userName);
+}
+
+/**
+ * Admin opens conversation with user
+ * @param {number} conversationUserId - User ID from conversation list
+ * @param {string} userName - Username
+ */
+function openConversation(conversationUserId, userName) {
+  currentConversationId = conversationUserId;  // User we're chatting with
+  
+  log(`👤 Mở cuộc trò chuyện với ${userName}`, "info");
+  
+  // Clear messages container first
+  const messagesContainer = document.getElementById("admin-chat-messages");
+  if (messagesContainer) {
+    messagesContainer.innerHTML = "<p style='text-align: center; color: #999;'>Đang tải tin nhắn...</p>";
+  }
+  
+  if (socket && socket.connected) {
+    socket.emit("admin-open-conversation", {
+      userId: conversationUserId,  // User ID we want to chat with
+      adminId: userId,  // Global userId = current admin ID
+      userName: userName,
+    });
+  } else {
+    log("❌ Socket not connected!", "error");
+  }
+}
+
+/**
+ * Admin gửi tin nhắn tới user
+ */
+function sendAdminMessage() {
+  const input = document.getElementById("admin-message-input");
+  const message = input.value.trim();
+  
+  if (!message) return;
+  
+  if (!currentConversationId) {
+    alert("❌ Vui lòng chọn một cuộc trò chuyện!");
+    return;
+  }
+  
+  if (!socket || !socket.connected) {
+    alert("❌ Mất kết nối tới server!");
+    return;
+  }
+  
+  // Send message with receiverId (the user we're replying to)
+  socket.emit("send-message", {
+    conversationId: currentConversationId,
+    senderId: userId,  // Admin ID
+    receiverId: currentConversationId,  // User ID (the conversation we opened)
+    senderName: "Support Admin",
+    message: message,
+    timestamp: new Date().toISOString(),
+  });
+  
+  input.value = "";
+  input.focus();
+  
+  log(`💬 Admin gửi tới user ${currentConversationId}: ${message}`, "info");
+}
+
+/**
+ * Admin request conversation list
+ */
+function requestConversationList() {
+  if (!socket || !socket.connected) {
+    alert("❌ Mất kết nối tới server!");
+    return;
+  }
+  
+  socket.emit("admin-get-conversations", {
+    adminId: userId,
+  });
+  
+  log("📋 Đang lấy danh sách cuộc trò chuyện...", "info");
+}
+
+/**
+ * Escape HTML để tránh XSS
+ */
+function escapeHtml(text) {
+  const div = document.createElement("div");
+  div.textContent = text;
+  return div.innerHTML;
 }

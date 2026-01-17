@@ -955,64 +955,107 @@ io.on("connection", (socket) => {
   // ============================================
 
   socket.on("join-chat", async (data) => {
-    const { userId, token } = data;
-    if (!userId || !token) return;
+    const { userId, userName } = data;
+    if (!userId) return;
 
     try {
-      const decoded = jwt.verify(token, JWT_SECRET);
-      if (decoded.id !== userId) return;
-
       currentUserId = userId;
       userSockets[userId] = socket.id;
-      console.log(`💬 User ${userId} joined chat`);
+      console.log(`💬 User ${userId} (${userName}) joined chat`);
 
+      // Tìm admin
       const admin = await db.getUserByUsername("admin");
-      if (!admin) return;
+      if (!admin) {
+        socket.emit("chat-history", { messages: [] });
+        return;
+      }
 
+      // Lấy tin nhắn cũ
       const messages = await db.getConversation(userId, admin.id);
-      socket.emit("chat-history", messages);
+      socket.emit("chat-history", { messages });
+      
+      // Notify admin
+      const adminSocketId = userSockets[admin.id];
+      if (adminSocketId) {
+        io.to(adminSocketId).emit("admin-joined", {
+          adminName: admin.username,
+          userId: userId,
+          userName: userName,
+        });
+      }
     } catch (error) {
       console.error("Chat join error:", error.message);
+      socket.emit("chat-history", { messages: [] });
     }
   });
 
   socket.on("send-message", async (data) => {
-    const { senderId, receiverId, message, token } = data;
-    if (!senderId || !receiverId || !message || !token) return;
+    const { senderId, receiverId, senderName, message, timestamp } = data;
+    if (!senderId || !message) return;
 
     try {
-      const decoded = jwt.verify(token, JWT_SECRET);
-      if (decoded.id !== senderId) return;
+      // If receiverId is provided (admin replying), use it directly
+      // Otherwise, find the admin
+      let finalReceiverId = receiverId;
+      if (!finalReceiverId) {
+        const admin = await db.getUserByUsername("admin");
+        if (!admin) return;
+        finalReceiverId = senderId !== admin.id ? admin.id : senderId;
+      }
+      
+      // Lưu tin nhắn vào database
+      const chatMessage = await db.createChatMessage(senderId, finalReceiverId, message);
 
-      const chatMessage = await db.createChatMessage(senderId, receiverId, message);
-
-      // Send to receiver if online
-      const receiverSocketId = userSockets[receiverId];
+      // Gửi tin nhắn cho receiver
+      const receiverSocketId = userSockets[finalReceiverId];
       if (receiverSocketId) {
-        io.to(receiverSocketId).emit("new-message", chatMessage);
+        io.to(receiverSocketId).emit("new-message", {
+          ...chatMessage,
+          senderName: senderName,
+          timestamp: timestamp,
+        });
       }
 
-      // Send back to sender
-      socket.emit("new-message", chatMessage);
+      // Gửi tin nhắn cho sender
+      socket.emit("new-message", {
+        ...chatMessage,
+        senderName: senderName,
+        timestamp: timestamp,
+      });
 
+      console.log(`💬 Message from ${senderName} to ${finalReceiverId}: ${message.substring(0, 30)}...`);
     } catch (error) {
       console.error("Send message error:", error.message);
     }
   });
 
   socket.on("admin-get-conversations", async (data) => {
-    const { adminId, token } = data;
-    if (!adminId || !token) return;
+    const { adminId } = data;
+    if (!adminId) return;
 
     try {
-      const decoded = jwt.verify(token, JWT_SECRET);
-      if (decoded.id !== adminId || decoded.role !== 'admin') return;
-
       const conversations = await db.getConversationList(adminId);
-      socket.emit("conversation-list", conversations);
-
+      socket.emit("conversation-list", { conversations });
+      console.log(`📋 Admin ${adminId} requested conversations: ${conversations.length}`);
     } catch (error) {
       console.error("Get conversations error:", error.message);
+      socket.emit("conversation-list", { conversations: [] });
+    }
+  });
+
+  socket.on("admin-open-conversation", async (data) => {
+    const { userId, adminId, userName } = data;
+    if (!userId || !adminId) return;
+
+    try {
+      currentConversationId = userId;
+      const messages = await db.getConversation(userId, adminId);
+      console.log(`📨 DB getConversation returned ${messages ? messages.length : 0} messages`);
+      socket.emit("chat-history", { messages });
+      console.log(`👤 Admin opened conversation with ${userName} - sent ${messages ? messages.length : 0} messages`);
+    } catch (error) {
+      console.error("Open conversation error:", error.message);
+      socket.emit("chat-history", { messages: [] });
     }
   });
 
