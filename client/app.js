@@ -194,6 +194,11 @@ async function restoreSession() {
       document.getElementById("display-role").textContent =
         userRole === "admin" ? "👨‍💼 Admin" : "👤 Người dùng";
 
+      // Hiển thị chat widget cho người dùng thường
+      if (userRole === "user") {
+        document.getElementById("chat-widget").style.display = "block";
+      }
+
       if (userRole === "admin") {
         document.getElementById("admin-section").style.display = "block";
         document.getElementById("admin-chat-section").style.display = "block";
