@@ -873,7 +873,7 @@ io.on("connection", (socket) => {
    * EVENT 1: Client tham gia xem phim
    * Kiến thức: Socket.io rooms - grouping clients
    */
-  socket.on("join-movie", (data) => {
+  socket.on("join-movie", async (data) => {
     const { movieId, userId, userName } = data;
     console.log(`👤 User ${userName} (${userId}) tham gia phim ${movieId}`);
 
@@ -881,6 +881,13 @@ io.on("connection", (socket) => {
 
     // Join room theo movieId
     socket.join(`movie-${movieId}`);
+
+    // Cleanup ghế expired trước khi gửi
+    try {
+      await db.releaseExpiredReservations();
+    } catch (err) {
+      console.error("❌ Error releasing expired seats:", err.message);
+    }
 
     // Gửi trạng thái ghế hiện tại
     db.getSeatsByMovie(movieId).then((seats) => {
@@ -1524,6 +1531,16 @@ app.use((err, req, res, next) => {
 // ============================================
 
 const PORT = process.env.PORT || 3000;
+
+// Auto-cleanup ghế expired mỗi 1 phút
+setInterval(async () => {
+  try {
+    await db.releaseExpiredReservations();
+    console.log("🧹 Auto-cleanup: Đã kiểm tra và giải phóng ghế hết hạn");
+  } catch (err) {
+    console.error("❌ Auto-cleanup error:", err.message);
+  }
+}, 60000); // 60 seconds
 
 server.listen(PORT, () => {
   console.log("\n" + "=".repeat(70));

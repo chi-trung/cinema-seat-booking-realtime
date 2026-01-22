@@ -520,18 +520,27 @@ function renderSeats(seats) {
         )
         .forEach((seat) => {
           const seatBtn = document.createElement("button");
-          seatBtn.className = `seat-btn seat-${seat.status}`;
+          
+          // Phân biệt: ghế mình chọn vs người khác chọn
+          if (seat.status === "selected" && seat.user_id === userId) {
+            // Ghế mình đang chọn (màu xanh)
+            seatBtn.className = "seat-btn seat-selected selected";
+          } else if (seat.status === "selected" && seat.user_id !== userId) {
+            // Ghế người khác đang chọn (màu vàng)
+            seatBtn.className = "seat-btn seat-selected-others";
+          } else {
+            // Ghế available hoặc booked
+            seatBtn.className = `seat-btn seat-${seat.status}`;
+          }
+          
           seatBtn.textContent = seat.seat_id;
 
+          // Chỉ cho phép click nếu là ghế available hoặc ghế mình đang chọn
           if (
             seat.status === "available" ||
             (seat.status === "selected" && seat.user_id === userId)
           ) {
             seatBtn.onclick = () => toggleSeat(seat.seat_id, seat.status);
-          }
-
-          if (seat.status === "selected" && seat.user_id === userId) {
-            seatBtn.classList.add("selected");
           }
 
           rowDiv.appendChild(seatBtn);
