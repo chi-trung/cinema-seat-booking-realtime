@@ -149,6 +149,11 @@ function loginSuccess(user, token) {
   if (userRole === "admin") {
     document.getElementById("admin-section").style.display = "block";
     document.getElementById("admin-chat-section").style.display = "block";
+
+    // Kiểm tra và khôi phục upload session nếu có sau khi load movies
+    setTimeout(() => {
+      checkAndRestoreAnyUploadSession();
+    }, 1000);
   }
 
   // Hiển thị chat widget cho người dùng
@@ -159,7 +164,7 @@ function loginSuccess(user, token) {
   // Kết nối WebSocket và load movies
   initializeWebSocket();
   loadMovies();
-  
+
   // Nếu là admin, load danh sách cuộc trò chuyện
   if (userRole === "admin") {
     setTimeout(() => {
@@ -273,8 +278,8 @@ function initializeWebSocket() {
   socket.on("connect", () => {
     log("✅ WebSocket đã kết nối thành công!", "success");
     updateConnectionStatus(true);
-    setupSocketListeners();  // Setup listeners sau khi connect
-    startPingPong();  // Start ping-pong
+    setupSocketListeners(); // Setup listeners sau khi connect
+    startPingPong(); // Start ping-pong
   });
 
   socket.on("disconnect", () => {
@@ -302,7 +307,7 @@ function setupSocketListeners() {
     log(`📨 Nhận lịch sử chat: ${data.messages.length} tin nhắn`, "info");
     renderChatMessages(data.messages);
   });
-  
+
   socket.on("seats-updated", (data) => {
     log(`🔄 Nhận cập nhật ghế real-time cho phim ${data.movieId}`, "info");
     if (data.movieId === currentMovieId) {
@@ -350,20 +355,32 @@ function setupSocketListeners() {
   });
 
   socket.on("new-message", (data) => {
-    log(`💬 Tin nhắn mới: sender=${data.senderId || data.sender_id}, receiver=${data.receiverId || data.receiver_id}, myId=${userId}`, "info");
-    
+    log(
+      `💬 Tin nhắn mới: sender=${data.senderId || data.sender_id}, receiver=${data.receiverId || data.receiver_id}, myId=${userId}`,
+      "info",
+    );
+
     if (userRole === "admin") {
       // Admin: chỉ hiển thị nếu tin nhắn liên quan đến conversation đang mở
       // currentConversationId = userId của user mà admin đang chat
       const messageSenderId = data.senderId || data.sender_id;
       const messageReceiverId = data.receiverId || data.receiver_id;
-      
+
       // Hiển thị nếu conversation đang mở có liên quan (sender hoặc receiver là user trong conversation)
-      if (currentConversationId === messageSenderId || currentConversationId === messageReceiverId) {
+      if (
+        currentConversationId === messageSenderId ||
+        currentConversationId === messageReceiverId
+      ) {
         addChatMessage(data);
-        log(`✅ Hiển thị tin nhắn - conversation đang mở: ${currentConversationId}`, "info");
+        log(
+          `✅ Hiển thị tin nhắn - conversation đang mở: ${currentConversationId}`,
+          "info",
+        );
       } else {
-        log(`⏭️ Bỏ qua - conversation khác (current: ${currentConversationId})`, "info");
+        log(
+          `⏭️ Bỏ qua - conversation khác (current: ${currentConversationId})`,
+          "info",
+        );
       }
     } else {
       // User: hiển thị tất cả tin nhắn liên quan đến user này
@@ -385,11 +402,18 @@ function setupSocketListeners() {
   });
 
   socket.on("conversation-list", (data) => {
-    log(`📋 Danh sách ${data.conversations.length} cuộc trò chuyện (auto-updated)`, "info");
+    log(
+      `📋 Danh sách ${data.conversations.length} cuộc trò chuyện (auto-updated)`,
+      "info",
+    );
     renderConversationList(data.conversations);
-    
+
     // Nếu admin chưa mở conversation nào và có conversation mới, tự động mở conversation đầu tiên
-    if (userRole === "admin" && !currentConversationId && data.conversations.length > 0) {
+    if (
+      userRole === "admin" &&
+      !currentConversationId &&
+      data.conversations.length > 0
+    ) {
       const firstConv = data.conversations[0];
       log(`🔓 Tự động mở conversation đầu tiên: ${firstConv.userName}`, "info");
       openConversation(firstConv.userId, firstConv.userName);
@@ -516,11 +540,11 @@ function renderSeats(seats) {
 
       seatsByRow[row]
         .sort(
-          (a, b) => parseInt(a.seat_id.slice(1)) - parseInt(b.seat_id.slice(1))
+          (a, b) => parseInt(a.seat_id.slice(1)) - parseInt(b.seat_id.slice(1)),
         )
         .forEach((seat) => {
           const seatBtn = document.createElement("button");
-          
+
           // Phân biệt: ghế mình chọn vs người khác chọn
           if (seat.status === "selected" && seat.user_id === userId) {
             // Ghế mình đang chọn (màu xanh)
@@ -532,7 +556,7 @@ function renderSeats(seats) {
             // Ghế available hoặc booked
             seatBtn.className = `seat-btn seat-${seat.status}`;
           }
-          
+
           seatBtn.textContent = seat.seat_id;
 
           // Chỉ cho phép click nếu là ghế available hoặc ghế mình đang chọn
@@ -615,7 +639,7 @@ async function confirmBooking() {
       alert(
         `✅ Booking thành công!\nMã booking: ${
           result.data.bookingId
-        }\nTổng tiền: ${result.data.totalPrice.toLocaleString()} VNĐ`
+        }\nTổng tiền: ${result.data.totalPrice.toLocaleString()} VNĐ`,
       );
       log(`✅ Booking thành công!`, "success");
 
@@ -778,7 +802,7 @@ async function uploadIntroVideo(movieId) {
     alert(
       "File video quá lớn! Tối đa 100MB. File của bạn: " +
         (videoFile.size / (1024 * 1024)).toFixed(2) +
-        "MB"
+        "MB",
     );
     return;
   }
@@ -786,7 +810,7 @@ async function uploadIntroVideo(movieId) {
   try {
     log(
       `📡 HTTP POST /api/admin/movies/${movieId}/upload-intro - Upload video`,
-      "info"
+      "info",
     );
 
     const formData = new FormData();
@@ -808,7 +832,7 @@ async function uploadIntroVideo(movieId) {
         const percentComplete = (e.loaded / e.total) * 100;
         progressFill.style.width = percentComplete + "%";
         uploadStatus.textContent = `Đang upload... ${Math.round(
-          percentComplete
+          percentComplete,
         )}%`;
       }
     });
@@ -851,7 +875,7 @@ async function uploadIntroVideo(movieId) {
 function deleteMovieConfirm(movieId, movieTitle) {
   if (
     confirm(
-      `⚠️ Bạn chắc chắn muốn xóa phim "${movieTitle}"?\n\nHành động này không thể hoàn tác!`
+      `⚠️ Bạn chắc chắn muốn xóa phim "${movieTitle}"?\n\nHành động này không thể hoàn tác!`,
     )
   ) {
     deleteMovie(movieId);
@@ -984,9 +1008,9 @@ function renderMovies(movieList) {
         })" class="btn-edit" title="Sửa phim">✏️ Sửa</button>
         
         <button onclick="deleteMovieConfirm(${movie.id}, '${movie.title.replace(
-            /'/g,
-            "\\'"
-          )}')" class="btn-delete" title="Xóa phim">🗑️ Xóa</button>
+          /'/g,
+          "\\'",
+        )}')" class="btn-delete" title="Xóa phim">🗑️ Xóa</button>
       </div>
     `
         : "";
@@ -1042,6 +1066,7 @@ let videoUploadState = {
   isPaused: false,
   uploadStartTime: 0,
   lastChunkTime: 0,
+  isResumedSession: false, // Flag để biết đây là session được khôi phục
 };
 
 /**
@@ -1097,16 +1122,61 @@ function onVideoFileSelected(event) {
       `File quá lớn! Tối đa 100MB. File của bạn: ${(
         file.size /
         (1024 * 1024)
-      ).toFixed(2)}MB`
+      ).toFixed(2)}MB`,
     );
     return;
   }
 
   videoUploadState.videoFile = file;
-  videoUploadState.totalSize = file.size;
-  videoUploadState.totalChunks = Math.ceil(
-    file.size / videoUploadState.chunkSize
-  );
+
+  // Kiểm tra nếu đây là session được khôi phục
+  if (videoUploadState.isResumedSession) {
+    // Kiểm tra xem file size có khớp với session không
+    if (file.size !== videoUploadState.totalSize) {
+      // File khác, reset session và bắt đầu upload mới
+      log(
+        "⚠️ File được chọn có kích thước khác với session cũ, bắt đầu upload mới",
+        "warning",
+      );
+      videoUploadState.isResumedSession = false;
+      videoUploadState.sessionId = null;
+      videoUploadState.uploadedSize = 0;
+      videoUploadState.currentChunk = 0;
+      videoUploadState.totalSize = file.size;
+      videoUploadState.totalChunks = Math.ceil(
+        file.size / videoUploadState.chunkSize,
+      );
+
+      // Reset UI
+      document.getElementById("upload-progress-bar").style.width = "0%";
+      document.getElementById("progress-text").textContent = "0%";
+      document.getElementById("uploaded-size").textContent =
+        "0 MB / " + (file.size / (1024 * 1024)).toFixed(2) + " MB";
+      document.getElementById("chunks-info").textContent =
+        "0 / " + videoUploadState.totalChunks;
+
+      showUploadStatusMessage(
+        "ℹ️ File mới được chọn, bắt đầu upload từ đầu.",
+        "info",
+      );
+    } else {
+      // File size khớp, tiếp tục session cũ
+      log(
+        "✅ File được chọn khớp với session cũ, có thể tiếp tục upload",
+        "success",
+      );
+      showUploadStatusMessage(
+        `ℹ️ File khớp với session cũ. Nhấn 'Tiếp tục Upload' để tiếp tục từ ${Math.round((videoUploadState.uploadedSize / videoUploadState.totalSize) * 100)}%.`,
+        "info",
+      );
+    }
+  } else {
+    // Session mới
+    videoUploadState.totalSize = file.size;
+    videoUploadState.totalChunks = Math.ceil(
+      file.size / videoUploadState.chunkSize,
+    );
+  }
 
   // Hiển thị thông tin file
   document.getElementById("file-name").textContent = file.name;
@@ -1117,19 +1187,22 @@ function onVideoFileSelected(event) {
   document.getElementById("file-info").style.display = "block";
   document.getElementById("upload-controls").style.display = "block";
 
-  // Reset UI
-  document.getElementById("upload-progress-bar").style.width = "0%";
-  document.getElementById("progress-text").textContent = "0%";
-  document.getElementById("uploaded-size").textContent =
-    "0 MB / " + (file.size / (1024 * 1024)).toFixed(2) + " MB";
-  document.getElementById("chunks-info").textContent =
-    "0 / " + videoUploadState.totalChunks;
+  // Chỉ reset UI nếu đây không phải là session được khôi phục
+  if (!videoUploadState.isResumedSession) {
+    // Reset UI
+    document.getElementById("upload-progress-bar").style.width = "0%";
+    document.getElementById("progress-text").textContent = "0%";
+    document.getElementById("uploaded-size").textContent =
+      "0 MB / " + (file.size / (1024 * 1024)).toFixed(2) + " MB";
+    document.getElementById("chunks-info").textContent =
+      "0 / " + videoUploadState.totalChunks;
+  }
 
   log(
     `✅ Chọn file video: ${file.name} (${(file.size / (1024 * 1024)).toFixed(
-      2
+      2,
     )} MB)`,
-    "success"
+    "success",
   );
 }
 
@@ -1157,7 +1230,7 @@ async function initUploadSession() {
           filename: videoUploadState.videoFile.name,
           fileSize: videoUploadState.videoFile.size,
         }),
-      }
+      },
     );
 
     const result = await response.json();
@@ -1177,7 +1250,7 @@ async function initUploadSession() {
         sessionId: result.data.sessionId,
         movieId: videoUploadState.currentMovieId,
         timestamp: Date.now(),
-      })
+      }),
     );
 
     log(`✅ Session khởi tạo thành công: ${result.data.sessionId}`, "success");
@@ -1185,6 +1258,74 @@ async function initUploadSession() {
   } catch (error) {
     log(`❌ Lỗi khởi tạo session: ${error.message}`, "error");
     return null;
+  }
+}
+
+/**
+ * Check và restore bất kỳ upload session nào đang hoạt động (cho tất cả phim)
+ */
+async function checkAndRestoreAnyUploadSession() {
+  if (!userRole === "admin") return;
+
+  log("🔍 Kiểm tra tất cả upload sessions đang hoạt động...", "info");
+
+  // Lấy danh sách phim để kiểm tra từng phim
+  try {
+    const response = await fetch(`${API_BASE}/movies`);
+    const result = await response.json();
+
+    if (result.success) {
+      const movies = result.data;
+
+      // Kiểm tra từng phim xem có session upload nào không
+      for (const movie of movies) {
+        const storageKey = `video-upload-${movie.id}`;
+        const savedSession = localStorage.getItem(storageKey);
+
+        if (savedSession) {
+          try {
+            const sessionData = JSON.parse(savedSession);
+            const sessionId = sessionData.sessionId;
+
+            // Check xem session còn hợp lệ không
+            const statusResponse = await fetch(
+              `${API_BASE}/admin/movies/${movie.id}/video-upload/status/${sessionId}`,
+              {
+                headers: { Authorization: `Bearer ${authToken}` },
+              },
+            );
+
+            if (statusResponse.ok) {
+              const statusData = await statusResponse.json();
+              if (
+                statusData.success &&
+                statusData.data.status === "in_progress"
+              ) {
+                // Tìm thấy session đang hoạt động, khôi phục nó
+                log(
+                  `✅ Tìm thấy upload session đang hoạt động cho phim: ${movie.title}`,
+                  "success",
+                );
+
+                // Mở modal và khôi phục session
+                videoUploadState.currentMovieId = movie.id;
+                await checkAndRestoreUploadSession(movie.id);
+                return; // Chỉ khôi phục một session tại một thời điểm
+              }
+            }
+          } catch (error) {
+            log(
+              `⚠️ Lỗi kiểm tra session cho phim ${movie.title}: ${error.message}`,
+              "warning",
+            );
+          }
+        }
+      }
+
+      log("ℹ️ Không tìm thấy upload session nào đang hoạt động", "info");
+    }
+  } catch (error) {
+    log(`⚠️ Lỗi kiểm tra upload sessions: ${error.message}`, "warning");
   }
 }
 
@@ -1210,7 +1351,7 @@ async function checkAndRestoreUploadSession(movieId) {
       `${API_BASE}/admin/movies/${movieId}/video-upload/status/${sessionId}`,
       {
         headers: { Authorization: `Bearer ${authToken}` },
-      }
+      },
     );
 
     if (!statusResponse.ok) {
@@ -1233,12 +1374,14 @@ async function checkAndRestoreUploadSession(movieId) {
     videoUploadState.chunkSize = statusData.data.chunkSize;
     videoUploadState.currentChunk = statusData.data.uploadedChunks;
     videoUploadState.totalChunks = Math.ceil(
-      statusData.data.totalSize / statusData.data.chunkSize
+      statusData.data.totalSize / statusData.data.chunkSize,
     );
+    videoUploadState.originalFilename = statusData.data.original_filename;
+    videoUploadState.isResumedSession = true; // Mark as resumed session
 
     // Update UI
     const percentComplete = Math.round(
-      (videoUploadState.uploadedSize / videoUploadState.totalSize) * 100
+      (videoUploadState.uploadedSize / videoUploadState.totalSize) * 100,
     );
 
     document.getElementById("upload-progress-bar").style.width =
@@ -1255,15 +1398,23 @@ async function checkAndRestoreUploadSession(movieId) {
 
     // Hiển thị modal và button tiếp tục
     document.getElementById("video-upload-modal").style.display = "flex";
+    document.getElementById("file-info").style.display = "block";
+    document.getElementById("upload-controls").style.display = "block";
     document.getElementById("start-upload-btn").textContent = "Tiếp tục Upload";
     document.getElementById("start-upload-btn").style.display = "block";
     document.getElementById("pause-upload-btn").style.display = "none";
     document.getElementById("video-file-input").disabled = true;
 
+    // Hiển thị thông tin file (từ session data)
+    document.getElementById("file-name").textContent =
+      statusData.data.original_filename || "Unknown file";
+    document.getElementById("file-size").textContent =
+      `${(statusData.data.totalSize / (1024 * 1024)).toFixed(2)} MB`;
+
     log(`✅ Phục hồi upload session: ${percentComplete}% đã upload`, "success");
     showUploadStatusMessage(
       `ℹ️ Upload trước đó: ${percentComplete}% hoàn thành. Nhấn 'Tiếp tục Upload' để tiếp tục.`,
-      "info"
+      "info",
     );
 
     return true;
@@ -1312,7 +1463,7 @@ async function uploadChunk(chunkIndex) {
 
         xhr.open(
           "POST",
-          `${API_BASE}/admin/movies/${videoUploadState.currentMovieId}/video-upload/chunk`
+          `${API_BASE}/admin/movies/${videoUploadState.currentMovieId}/video-upload/chunk`,
         );
         xhr.setRequestHeader("Authorization", `Bearer ${authToken}`);
         xhr.setRequestHeader("X-Session-Id", videoUploadState.sessionId);
@@ -1339,8 +1490,18 @@ async function uploadChunk(chunkIndex) {
  */
 async function startVideoUpload() {
   if (!videoUploadState.videoFile) {
-    alert("Vui lòng chọn file video");
-    return;
+    // Nếu đây là session được khôi phục, thông báo cần chọn lại file
+    if (videoUploadState.isResumedSession) {
+      alert(
+        "⚠️ File video trước đó không thể khôi phục. Vui lòng chọn lại file video để tiếp tục upload.",
+      );
+      document.getElementById("video-file-input").disabled = false;
+      document.getElementById("video-file-input").focus();
+      return;
+    } else {
+      alert("Vui lòng chọn file video");
+      return;
+    }
   }
 
   // Nếu chưa có session, khởi tạo mới
@@ -1355,7 +1516,7 @@ async function startVideoUpload() {
       `${API_BASE}/admin/movies/${videoUploadState.currentMovieId}/video-upload/status/${videoUploadState.sessionId}`,
       {
         headers: { Authorization: `Bearer ${authToken}` },
-      }
+      },
     );
 
     if (!statusResponse.ok) {
@@ -1377,7 +1538,7 @@ async function startVideoUpload() {
             ).toFixed(2)} MB (chunk ${videoUploadState.currentChunk}/${
               videoUploadState.totalChunks
             })`,
-            "info"
+            "info",
           );
         }
       }
@@ -1457,13 +1618,13 @@ async function startVideoUpload() {
         `✅ Chunk ${i + 1}/${
           videoUploadState.totalChunks
         } uploaded - ${percentComplete}%`,
-        "success"
+        "success",
       );
     } catch (error) {
       log(`❌ Lỗi upload chunk ${i}: ${error.message}`, "error");
       showUploadStatusMessage(
         `❌ Lỗi: ${error.message}. Bạn có thể tiếp tục upload sau.`,
-        "error"
+        "error",
       );
       videoUploadState.isUploading = false;
       document.getElementById("pause-upload-btn").style.display = "none";
@@ -1488,7 +1649,7 @@ function pauseVideoUpload() {
   log("⏸️ Upload đã tạm dừng", "info");
   showUploadStatusMessage(
     "⏸️ Upload đã tạm dừng. Nhấn 'Tiếp tục Upload' để tiếp tục.",
-    "warning"
+    "warning",
   );
 }
 
@@ -1517,7 +1678,7 @@ async function completeUpload() {
     log("📡 Hoàn thành upload video...", "info");
     console.log(
       "🔍 Debug: Gọi API complete với sessionId:",
-      videoUploadState.sessionId
+      videoUploadState.sessionId,
     );
 
     const response = await fetch(
@@ -1531,7 +1692,7 @@ async function completeUpload() {
         body: JSON.stringify({
           sessionId: videoUploadState.sessionId,
         }),
-      }
+      },
     );
 
     console.log("🔍 Debug: Response status:", response.status);
@@ -1548,11 +1709,11 @@ async function completeUpload() {
 
       showUploadStatusMessage(
         "✅ Upload video hoàn thành thành công!",
-        "success"
+        "success",
       );
       log(
         `✅ Upload video thành công! File: ${result.data.videoName}`,
-        "success"
+        "success",
       );
 
       alert(successMsg);
@@ -1617,15 +1778,15 @@ function showUploadStatusMessage(message, type) {
 function toggleChat() {
   const chatWindow = document.getElementById("chat-window");
   const chatBubble = document.getElementById("chat-bubble");
-  
+
   if (!chatWindow) return;
-  
+
   chatOpen = !chatOpen;
-  
+
   if (chatOpen) {
     chatWindow.style.display = "block";
     chatBubble.style.opacity = "0.5";
-    
+
     // User: luôn emit join-chat khi mở chat để đăng ký vào userSockets
     if (socket && socket.connected && userRole !== "admin") {
       socket.emit("join-chat", {
@@ -1634,7 +1795,7 @@ function toggleChat() {
       });
       log(`💬 User ${userId} joining chat...`, "info");
     }
-    
+
     // Focus input
     setTimeout(() => {
       const input = document.getElementById("chat-input");
@@ -1672,14 +1833,14 @@ function handleAdminChatInput(event) {
 function sendChatMessage() {
   const input = document.getElementById("chat-input");
   const message = input.value.trim();
-  
+
   if (!message) return;
-  
+
   if (!socket || !socket.connected) {
     alert("❌ Mất kết nối tới server. Vui lòng kiểm tra lại!");
     return;
   }
-  
+
   // Emit event gửi tin nhắn
   socket.emit("send-message", {
     conversationId: currentConversationId,
@@ -1688,11 +1849,11 @@ function sendChatMessage() {
     message: message,
     timestamp: new Date().toISOString(),
   });
-  
+
   // Clear input
   input.value = "";
   input.focus();
-  
+
   log(`💬 Bạn gửi: ${message}`, "info");
 }
 
@@ -1704,17 +1865,17 @@ function sendChatMessage() {
 function addChatMessage(data) {
   // Determine correct container based on role
   let messagesContainer = null;
-  
+
   if (userRole === "admin") {
     messagesContainer = document.getElementById("admin-chat-messages");
   } else {
     messagesContainer = document.getElementById("chat-messages");
   }
-  
+
   if (!messagesContainer) return;
-  
+
   const messageEl = document.createElement("div");
-  
+
   // Xác định người gửi: Nếu senderId === userId (người đang đăng nhập) thì là "my-message"
   // Nếu userRole là admin và đang xem cuộc trò chuyện:
   //   - Admin gửi (senderId === userId) => my-message (bên phải, xanh)
@@ -1722,53 +1883,65 @@ function addChatMessage(data) {
   // Nếu userRole là user:
   //   - User gửi (senderId === userId) => my-message (bên phải, xanh)
   //   - Admin gửi (senderId !== userId) => their-message (bên trái, xám)
-  
+
   const isMyMessage = data.senderId === userId || data.sender_id === userId;
-  
+
   // Class mới: my-message (bên phải, xanh) hoặc their-message (bên trái, xám)
-  messageEl.className = `chat-message ${isMyMessage ? 'my-message' : 'their-message'}`;
-  
+  messageEl.className = `chat-message ${isMyMessage ? "my-message" : "their-message"}`;
+
   // Format thời gian với ngày tháng năm - Múi giờ Việt Nam
-  let timeDisplay = '';
+  let timeDisplay = "";
   try {
     const date = new Date(data.timestamp || data.created_at);
-    
+
     // Tạo date object với múi giờ Việt Nam
-    const vnDate = new Date(date.toLocaleString('en-US', { timeZone: 'Asia/Ho_Chi_Minh' }));
+    const vnDate = new Date(
+      date.toLocaleString("en-US", { timeZone: "Asia/Ho_Chi_Minh" }),
+    );
     const now = new Date();
-    const vnNow = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Ho_Chi_Minh' }));
-    
-    const today = new Date(vnNow.getFullYear(), vnNow.getMonth(), vnNow.getDate());
-    const messageDate = new Date(vnDate.getFullYear(), vnDate.getMonth(), vnDate.getDate());
-    
-    const hours = vnDate.getHours().toString().padStart(2, '0');
-    const minutes = vnDate.getMinutes().toString().padStart(2, '0');
+    const vnNow = new Date(
+      now.toLocaleString("en-US", { timeZone: "Asia/Ho_Chi_Minh" }),
+    );
+
+    const today = new Date(
+      vnNow.getFullYear(),
+      vnNow.getMonth(),
+      vnNow.getDate(),
+    );
+    const messageDate = new Date(
+      vnDate.getFullYear(),
+      vnDate.getMonth(),
+      vnDate.getDate(),
+    );
+
+    const hours = vnDate.getHours().toString().padStart(2, "0");
+    const minutes = vnDate.getMinutes().toString().padStart(2, "0");
     const time = `${hours}:${minutes}`;
-    
+
     // Nếu hôm nay: chỉ hiển thị giờ
     if (messageDate.getTime() === today.getTime()) {
       timeDisplay = time;
     } else {
       // Nếu khác ngày: hiển thị ngày/tháng/năm và giờ
-      const day = vnDate.getDate().toString().padStart(2, '0');
-      const month = (vnDate.getMonth() + 1).toString().padStart(2, '0');
+      const day = vnDate.getDate().toString().padStart(2, "0");
+      const month = (vnDate.getMonth() + 1).toString().padStart(2, "0");
       const year = vnDate.getFullYear();
       timeDisplay = `${day}/${month}/${year} ${time}`;
     }
   } catch (e) {
-    timeDisplay = '--:--';
+    timeDisplay = "--:--";
   }
-  
+
   messageEl.innerHTML = `
     <div class="chat-message-header">
-      <strong>${escapeHtml(data.senderName || data.sender_name || 'User')}</strong>
+      <strong>${escapeHtml(data.senderName || data.sender_name || "User")}</strong>
       <span class="chat-time">${timeDisplay}</span>
     </div>
     <div class="chat-message-body">${escapeHtml(data.message)}</div>
   `;
-  
+
   messagesContainer.appendChild(messageEl);
-  
+
   // Scroll xuống cuối cùng - đảm bảo tin nhắn mới hiển thị
   requestAnimationFrame(() => {
     messagesContainer.scrollTop = messagesContainer.scrollHeight;
@@ -1781,17 +1954,17 @@ function addChatMessage(data) {
 function renderChatMessages(messages) {
   // Determine correct container based on role
   let messagesContainer = null;
-  
+
   if (userRole === "admin") {
     messagesContainer = document.getElementById("admin-chat-messages");
   } else {
     messagesContainer = document.getElementById("chat-messages");
   }
-  
+
   if (!messagesContainer) return;
-  
+
   messagesContainer.innerHTML = "";
-  
+
   messages.forEach((msg) => {
     addChatMessage(msg);
   });
@@ -1803,25 +1976,29 @@ function renderChatMessages(messages) {
 function renderConversationList(conversations) {
   const listContainer = document.getElementById("admin-conversations-list");
   if (!listContainer) return;
-  
+
   if (!conversations || conversations.length === 0) {
-    listContainer.innerHTML = "<p style='text-align: center; color: #999;'>Không tìm thấy cuộc trò chuyện nào</p>";
+    listContainer.innerHTML =
+      "<p style='text-align: center; color: #999;'>Không tìm thấy cuộc trò chuyện nào</p>";
     return;
   }
-  
+
   // Lưu conversations vào biến global để filter (chỉ lưu khi không phải filtered)
   if (!window.isFiltering) {
     window.allConversations = conversations;
   }
-  
+
   listContainer.innerHTML = conversations
     .map((conv) => {
       const isActive = currentConversationId === conv.userId;
-      const activeClass = isActive ? 'conversation-active' : '';
+      const activeClass = isActive ? "conversation-active" : "";
       const unreadCount = conv.unread_count || 0;
-      const unreadBadge = unreadCount > 0 ? `<span class="unread-badge">${unreadCount}</span>` : '';
-      const unreadClass = unreadCount > 0 ? 'has-unread' : '';
-      
+      const unreadBadge =
+        unreadCount > 0
+          ? `<span class="unread-badge">${unreadCount}</span>`
+          : "";
+      const unreadClass = unreadCount > 0 ? "has-unread" : "";
+
       return `
         <div class="conversation-item ${activeClass} ${unreadClass}" data-user-id="${conv.userId}" data-user-name="${escapeHtml(conv.userName)}" onclick="openConversationFromElement(this)">
           <div class="conversation-header">
@@ -1829,12 +2006,12 @@ function renderConversationList(conversations) {
             ${unreadBadge}
           </div>
           <div class="conversation-preview">${escapeHtml(conv.lastMessage)}</div>
-          <div class="conversation-time">${new Date(conv.lastMessageTime).toLocaleString("vi-VN", { timeZone: 'Asia/Ho_Chi_Minh' })}</div>
+          <div class="conversation-time">${new Date(conv.lastMessageTime).toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh" })}</div>
         </div>
       `;
     })
     .join("");
-  
+
   log(`📋 Rendered ${conversations.length} conversations`, "info");
 }
 
@@ -1847,36 +2024,45 @@ function filterConversations() {
     log("⚠️ Search input not found", "error");
     return;
   }
-  
+
   // Lấy giá trị search và trim
-  const searchValue = searchInput.value || '';
+  const searchValue = searchInput.value || "";
   const searchTerm = searchValue.trim().toLowerCase();
-  
+
   // Kiểm tra xem có allConversations chưa
   if (!window.allConversations || window.allConversations.length === 0) {
     log("⚠️ allConversations chưa sẵn sàng", "warning");
     return;
   }
-  
-  log(`🔍 Filter - searchValue: "${searchValue}", searchTerm: "${searchTerm}", length: ${searchTerm.length}`, "info");
-  
+
+  log(
+    `🔍 Filter - searchValue: "${searchValue}", searchTerm: "${searchTerm}", length: ${searchTerm.length}`,
+    "info",
+  );
+
   // Nếu input rỗng (không có gì hoặc chỉ có khoảng trắng)
   if (searchTerm.length === 0) {
     window.isFiltering = false;
     renderConversationList(window.allConversations);
-    log(`🔍 Hiển thị tất cả ${window.allConversations.length} conversations`, "info");
+    log(
+      `🔍 Hiển thị tất cả ${window.allConversations.length} conversations`,
+      "info",
+    );
     return;
   }
-  
+
   // Lọc conversations
   window.isFiltering = true;
-  const filtered = window.allConversations.filter(conv => {
-    const userName = (conv.userName || '').toLowerCase();
+  const filtered = window.allConversations.filter((conv) => {
+    const userName = (conv.userName || "").toLowerCase();
     return userName.includes(searchTerm);
   });
-  
+
   renderConversationList(filtered);
-  log(`🔍 Kết quả lọc: ${filtered.length}/${window.allConversations.length} conversations`, "info");
+  log(
+    `🔍 Kết quả lọc: ${filtered.length}/${window.allConversations.length} conversations`,
+    "info",
+  );
 }
 
 /**
@@ -1885,7 +2071,7 @@ function filterConversations() {
 function clearConversationSearch() {
   const searchInput = document.getElementById("conversation-search");
   if (searchInput) {
-    searchInput.value = ''; // Xóa text
+    searchInput.value = ""; // Xóa text
     window.isFiltering = false; // Reset flag
     filterConversations(); // Gọi filter để hiển thị lại tất cả
     log("🗑️ Đã xóa bộ lọc", "info");
@@ -1898,9 +2084,12 @@ function clearConversationSearch() {
 function openConversationFromElement(element) {
   const userId = parseInt(element.getAttribute("data-user-id"));
   const userName = element.getAttribute("data-user-name");
-  
-  log(`🖱️ Clicked conversation: userId=${userId}, userName=${userName}`, "info");
-  
+
+  log(
+    `🖱️ Clicked conversation: userId=${userId}, userName=${userName}`,
+    "info",
+  );
+
   openConversation(userId, userName);
 }
 
@@ -1910,23 +2099,24 @@ function openConversationFromElement(element) {
  * @param {string} userName - Username
  */
 function openConversation(conversationUserId, userName) {
-  currentConversationId = conversationUserId;  // User we're chatting with
-  
+  currentConversationId = conversationUserId; // User we're chatting with
+
   log(`👤 Mở cuộc trò chuyện với ${userName}`, "info");
-  
+
   // Clear messages container first
   const messagesContainer = document.getElementById("admin-chat-messages");
   if (messagesContainer) {
-    messagesContainer.innerHTML = "<p style='text-align: center; color: #999;'>Đang tải tin nhắn...</p>";
+    messagesContainer.innerHTML =
+      "<p style='text-align: center; color: #999;'>Đang tải tin nhắn...</p>";
   }
-  
+
   if (socket && socket.connected) {
     socket.emit("admin-open-conversation", {
-      userId: conversationUserId,  // User ID we want to chat with
-      adminId: userId,  // Global userId = current admin ID
+      userId: conversationUserId, // User ID we want to chat with
+      adminId: userId, // Global userId = current admin ID
       userName: userName,
     });
-    
+
     // Request conversation list để cập nhật unread count (sau khi mark as read)
     setTimeout(() => {
       requestConversationList();
@@ -1942,32 +2132,32 @@ function openConversation(conversationUserId, userName) {
 function sendAdminMessage() {
   const input = document.getElementById("admin-message-input");
   const message = input.value.trim();
-  
+
   if (!message) return;
-  
+
   if (!currentConversationId) {
     alert("❌ Vui lòng chọn một cuộc trò chuyện!");
     return;
   }
-  
+
   if (!socket || !socket.connected) {
     alert("❌ Mất kết nối tới server!");
     return;
   }
-  
+
   // Send message with receiverId (the user we're replying to)
   socket.emit("send-message", {
     conversationId: currentConversationId,
-    senderId: userId,  // Admin ID
-    receiverId: currentConversationId,  // User ID (the conversation we opened)
+    senderId: userId, // Admin ID
+    receiverId: currentConversationId, // User ID (the conversation we opened)
     senderName: "Support Admin",
     message: message,
     timestamp: new Date().toISOString(),
   });
-  
+
   input.value = "";
   input.focus();
-  
+
   log(`💬 Admin gửi tới user ${currentConversationId}: ${message}`, "info");
 }
 
@@ -1979,11 +2169,11 @@ function requestConversationList() {
     alert("❌ Mất kết nối tới server!");
     return;
   }
-  
+
   socket.emit("admin-get-conversations", {
     adminId: userId,
   });
-  
+
   log("📋 Đang lấy danh sách cuộc trò chuyện...", "info");
 }
 
