@@ -155,6 +155,10 @@
             <div style="display: flex; gap: 20px; margin-top: 15px;">
               <div style="flex: 1; border-right: 1px solid #ddd; padding-right: 15px;">
                 <h4>Danh sách cuộc trò chuyện</h4>
+                <div style="position: relative; margin-bottom: 10px;">
+                  <input type="text" id="conversation-search" placeholder="🔍 Tìm kiếm khách hàng..." oninput="filterConversations()" style="width: 100%; padding: 8px 30px 8px 8px; border: 1px solid #ddd; border-radius: 5px;">
+                  <button onclick="clearConversationSearch()" style="position: absolute; right: 5px; top: 50%; transform: translateY(-50%); background: none; border: none; color: #999; cursor: pointer; font-size: 18px; padding: 0 5px;" title="Xóa">&times;</button>
+                </div>
                 <div id="admin-conversations-list" style="max-height: 400px; overflow-y: auto; border: 1px solid #eee; padding: 10px; border-radius: 5px;">
                   <p style="text-align: center; color: #999;">Đang tải...</p>
                 </div>
@@ -166,7 +170,7 @@
                   <p style="text-align: center; color: #999;">Chọn một cuộc trò chuyện để xem</p>
                 </div>
                 <div style="display: flex; gap: 5px;">
-                  <input type="text" id="admin-message-input" placeholder="Nhập tin nhắn..." style="flex: 1; padding: 8px; border: 1px solid #ddd; border-radius: 5px;">
+                  <input type="text" id="admin-message-input" placeholder="Nhập tin nhắn..." onkeydown="handleAdminChatInput(event)" style="flex: 1; padding: 8px; border: 1px solid #ddd; border-radius: 5px;">
                   <button onclick="sendAdminMessage()" style="padding: 8px 15px; background: #28a745; color: white; border: none; border-radius: 5px; cursor: pointer;">Gửi</button>
                 </div>
               </div>

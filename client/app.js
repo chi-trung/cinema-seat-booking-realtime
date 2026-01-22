@@ -350,8 +350,26 @@ function setupSocketListeners() {
   });
 
   socket.on("new-message", (data) => {
-    log(`💬 Tin nhắn mới từ ${data.senderName}`, "info");
-    addChatMessage(data);
+    log(`💬 Tin nhắn mới: sender=${data.senderId || data.sender_id}, receiver=${data.receiverId || data.receiver_id}, myId=${userId}`, "info");
+    
+    if (userRole === "admin") {
+      // Admin: chỉ hiển thị nếu tin nhắn liên quan đến conversation đang mở
+      // currentConversationId = userId của user mà admin đang chat
+      const messageSenderId = data.senderId || data.sender_id;
+      const messageReceiverId = data.receiverId || data.receiver_id;
+      
+      // Hiển thị nếu conversation đang mở có liên quan (sender hoặc receiver là user trong conversation)
+      if (currentConversationId === messageSenderId || currentConversationId === messageReceiverId) {
+        addChatMessage(data);
+        log(`✅ Hiển thị tin nhắn - conversation đang mở: ${currentConversationId}`, "info");
+      } else {
+        log(`⏭️ Bỏ qua - conversation khác (current: ${currentConversationId})`, "info");
+      }
+    } else {
+      // User: hiển thị tất cả tin nhắn liên quan đến user này
+      addChatMessage(data);
+      log(`✅ User hiển thị tin nhắn`, "info");
+    }
   });
 
   socket.on("admin-joined", (data) => {
@@ -367,8 +385,15 @@ function setupSocketListeners() {
   });
 
   socket.on("conversation-list", (data) => {
-    log(`📋 Danh sách ${data.conversations.length} cuộc trò chuyện`, "info");
+    log(`📋 Danh sách ${data.conversations.length} cuộc trò chuyện (auto-updated)`, "info");
     renderConversationList(data.conversations);
+    
+    // Nếu admin chưa mở conversation nào và có conversation mới, tự động mở conversation đầu tiên
+    if (userRole === "admin" && !currentConversationId && data.conversations.length > 0) {
+      const firstConv = data.conversations[0];
+      log(`🔓 Tự động mở conversation đầu tiên: ${firstConv.userName}`, "info");
+      openConversation(firstConv.userId, firstConv.userName);
+    }
   });
 }
 
@@ -1592,17 +1617,19 @@ function toggleChat() {
     chatWindow.style.display = "block";
     chatBubble.style.opacity = "0.5";
     
-    // Load chat history nếu chưa có conversation
-    if (!currentConversationId && socket && socket.connected) {
+    // User: luôn emit join-chat khi mở chat để đăng ký vào userSockets
+    if (socket && socket.connected && userRole !== "admin") {
       socket.emit("join-chat", {
         userId: userId,
         userName: userName,
       });
+      log(`💬 User ${userId} joining chat...`, "info");
     }
     
     // Focus input
     setTimeout(() => {
-      document.getElementById("chat-input").focus();
+      const input = document.getElementById("chat-input");
+      if (input) input.focus();
     }, 100);
   } else {
     chatWindow.style.display = "none";
@@ -1617,6 +1644,16 @@ function handleChatInput(event) {
   if (event.key === "Enter" && !event.shiftKey) {
     event.preventDefault();
     sendChatMessage();
+  }
+}
+
+/**
+ * Xử lý input admin chat (Enter để gửi)
+ */
+function handleAdminChatInput(event) {
+  if (event.key === "Enter" && !event.shiftKey) {
+    event.preventDefault();
+    sendAdminMessage();
   }
 }
 
@@ -1652,6 +1689,8 @@ function sendChatMessage() {
 
 /**
  * Thêm tin nhắn mới vào chat
+ * Hiển thị tin nhắn bên phải (màu xanh) nếu là người đăng nhập gửi
+ * Hiển thị tin nhắn bên trái (màu xám) nếu là người khác gửi
  */
 function addChatMessage(data) {
   // Determine correct container based on role
@@ -1666,19 +1705,65 @@ function addChatMessage(data) {
   if (!messagesContainer) return;
   
   const messageEl = document.createElement("div");
-  messageEl.className = `chat-message ${data.senderId === userId ? "user-message" : "admin-message"}`;
   
-  const time = new Date(data.timestamp || data.created_at).toLocaleTimeString("vi-VN");
+  // Xác định người gửi: Nếu senderId === userId (người đang đăng nhập) thì là "my-message"
+  // Nếu userRole là admin và đang xem cuộc trò chuyện:
+  //   - Admin gửi (senderId === userId) => my-message (bên phải, xanh)
+  //   - User gửi (senderId !== userId) => their-message (bên trái, xám)
+  // Nếu userRole là user:
+  //   - User gửi (senderId === userId) => my-message (bên phải, xanh)
+  //   - Admin gửi (senderId !== userId) => their-message (bên trái, xám)
+  
+  const isMyMessage = data.senderId === userId || data.sender_id === userId;
+  
+  // Class mới: my-message (bên phải, xanh) hoặc their-message (bên trái, xám)
+  messageEl.className = `chat-message ${isMyMessage ? 'my-message' : 'their-message'}`;
+  
+  // Format thời gian với ngày tháng năm - Múi giờ Việt Nam
+  let timeDisplay = '';
+  try {
+    const date = new Date(data.timestamp || data.created_at);
+    
+    // Tạo date object với múi giờ Việt Nam
+    const vnDate = new Date(date.toLocaleString('en-US', { timeZone: 'Asia/Ho_Chi_Minh' }));
+    const now = new Date();
+    const vnNow = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Ho_Chi_Minh' }));
+    
+    const today = new Date(vnNow.getFullYear(), vnNow.getMonth(), vnNow.getDate());
+    const messageDate = new Date(vnDate.getFullYear(), vnDate.getMonth(), vnDate.getDate());
+    
+    const hours = vnDate.getHours().toString().padStart(2, '0');
+    const minutes = vnDate.getMinutes().toString().padStart(2, '0');
+    const time = `${hours}:${minutes}`;
+    
+    // Nếu hôm nay: chỉ hiển thị giờ
+    if (messageDate.getTime() === today.getTime()) {
+      timeDisplay = time;
+    } else {
+      // Nếu khác ngày: hiển thị ngày/tháng/năm và giờ
+      const day = vnDate.getDate().toString().padStart(2, '0');
+      const month = (vnDate.getMonth() + 1).toString().padStart(2, '0');
+      const year = vnDate.getFullYear();
+      timeDisplay = `${day}/${month}/${year} ${time}`;
+    }
+  } catch (e) {
+    timeDisplay = '--:--';
+  }
+  
   messageEl.innerHTML = `
     <div class="chat-message-header">
-      <strong>${data.senderName || data.sender_name}</strong>
-      <span class="chat-time">${time}</span>
+      <strong>${escapeHtml(data.senderName || data.sender_name || 'User')}</strong>
+      <span class="chat-time">${timeDisplay}</span>
     </div>
     <div class="chat-message-body">${escapeHtml(data.message)}</div>
   `;
   
   messagesContainer.appendChild(messageEl);
-  messagesContainer.scrollTop = messagesContainer.scrollHeight;
+  
+  // Scroll xuống cuối cùng - đảm bảo tin nhắn mới hiển thị
+  requestAnimationFrame(() => {
+    messagesContainer.scrollTop = messagesContainer.scrollHeight;
+  });
 }
 
 /**
@@ -1710,22 +1795,92 @@ function renderConversationList(conversations) {
   const listContainer = document.getElementById("admin-conversations-list");
   if (!listContainer) return;
   
-  if (conversations.length === 0) {
-    listContainer.innerHTML = "<p>Chưa có cuộc trò chuyện nào</p>";
+  if (!conversations || conversations.length === 0) {
+    listContainer.innerHTML = "<p style='text-align: center; color: #999;'>Không tìm thấy cuộc trò chuyện nào</p>";
     return;
   }
   
+  // Lưu conversations vào biến global để filter (chỉ lưu khi không phải filtered)
+  if (!window.isFiltering) {
+    window.allConversations = conversations;
+  }
+  
   listContainer.innerHTML = conversations
-    .map((conv) => `
-      <div class="conversation-item" data-user-id="${conv.userId}" data-user-name="${escapeHtml(conv.userName)}" onclick="openConversationFromElement(this)">
-        <div class="conversation-name">${escapeHtml(conv.userName)}</div>
-        <div class="conversation-preview">${escapeHtml(conv.lastMessage)}</div>
-        <div class="conversation-time">${new Date(conv.lastMessageTime).toLocaleString("vi-VN")}</div>
-      </div>
-    `)
+    .map((conv) => {
+      const isActive = currentConversationId === conv.userId;
+      const activeClass = isActive ? 'conversation-active' : '';
+      const unreadCount = conv.unread_count || 0;
+      const unreadBadge = unreadCount > 0 ? `<span class="unread-badge">${unreadCount}</span>` : '';
+      const unreadClass = unreadCount > 0 ? 'has-unread' : '';
+      
+      return `
+        <div class="conversation-item ${activeClass} ${unreadClass}" data-user-id="${conv.userId}" data-user-name="${escapeHtml(conv.userName)}" onclick="openConversationFromElement(this)">
+          <div class="conversation-header">
+            <div class="conversation-name">${escapeHtml(conv.userName)}</div>
+            ${unreadBadge}
+          </div>
+          <div class="conversation-preview">${escapeHtml(conv.lastMessage)}</div>
+          <div class="conversation-time">${new Date(conv.lastMessageTime).toLocaleString("vi-VN", { timeZone: 'Asia/Ho_Chi_Minh' })}</div>
+        </div>
+      `;
+    })
     .join("");
   
   log(`📋 Rendered ${conversations.length} conversations`, "info");
+}
+
+/**
+ * Filter conversations theo search input - Thuật toán mới
+ */
+function filterConversations() {
+  const searchInput = document.getElementById("conversation-search");
+  if (!searchInput) {
+    log("⚠️ Search input not found", "error");
+    return;
+  }
+  
+  // Lấy giá trị search và trim
+  const searchValue = searchInput.value || '';
+  const searchTerm = searchValue.trim().toLowerCase();
+  
+  // Kiểm tra xem có allConversations chưa
+  if (!window.allConversations || window.allConversations.length === 0) {
+    log("⚠️ allConversations chưa sẵn sàng", "warning");
+    return;
+  }
+  
+  log(`🔍 Filter - searchValue: "${searchValue}", searchTerm: "${searchTerm}", length: ${searchTerm.length}`, "info");
+  
+  // Nếu input rỗng (không có gì hoặc chỉ có khoảng trắng)
+  if (searchTerm.length === 0) {
+    window.isFiltering = false;
+    renderConversationList(window.allConversations);
+    log(`🔍 Hiển thị tất cả ${window.allConversations.length} conversations`, "info");
+    return;
+  }
+  
+  // Lọc conversations
+  window.isFiltering = true;
+  const filtered = window.allConversations.filter(conv => {
+    const userName = (conv.userName || '').toLowerCase();
+    return userName.includes(searchTerm);
+  });
+  
+  renderConversationList(filtered);
+  log(`🔍 Kết quả lọc: ${filtered.length}/${window.allConversations.length} conversations`, "info");
+}
+
+/**
+ * Clear conversation search
+ */
+function clearConversationSearch() {
+  const searchInput = document.getElementById("conversation-search");
+  if (searchInput) {
+    searchInput.value = ''; // Xóa text
+    window.isFiltering = false; // Reset flag
+    filterConversations(); // Gọi filter để hiển thị lại tất cả
+    log("🗑️ Đã xóa bộ lọc", "info");
+  }
 }
 
 /**
@@ -1762,6 +1917,11 @@ function openConversation(conversationUserId, userName) {
       adminId: userId,  // Global userId = current admin ID
       userName: userName,
     });
+    
+    // Request conversation list để cập nhật unread count (sau khi mark as read)
+    setTimeout(() => {
+      requestConversationList();
+    }, 500);
   } else {
     log("❌ Socket not connected!", "error");
   }

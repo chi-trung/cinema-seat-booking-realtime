@@ -961,7 +961,8 @@ io.on("connection", (socket) => {
     try {
       currentUserId = userId;
       userSockets[userId] = socket.id;
-      console.log(`💬 User ${userId} (${userName}) joined chat`);
+      console.log(`💬 User ${userId} (${userName}) joined chat (socketId: ${socket.id})`);
+      console.log(`📊 Current userSockets:`, Object.keys(userSockets).map(id => `${id}:${userSockets[id].substring(0, 8)}...`));
 
       // Tìm admin
       const admin = await db.getUserByUsername("admin");
@@ -1003,27 +1004,47 @@ io.on("connection", (socket) => {
         finalReceiverId = senderId !== admin.id ? admin.id : senderId;
       }
       
+      console.log(`📩 send-message: senderId=${senderId}, finalReceiverId=${finalReceiverId}, message="${message.substring(0, 20)}..."`);
+      
       // Lưu tin nhắn vào database
       const chatMessage = await db.createChatMessage(senderId, finalReceiverId, message);
+      console.log(`💾 Saved to DB: id=${chatMessage.id}, sender_id=${chatMessage.sender_id}, receiver_id=${chatMessage.receiver_id}`);
 
-      // Gửi tin nhắn cho receiver
-      const receiverSocketId = userSockets[finalReceiverId];
-      if (receiverSocketId) {
-        io.to(receiverSocketId).emit("new-message", {
-          ...chatMessage,
-          senderName: senderName,
-          timestamp: timestamp,
-        });
-      }
-
-      // Gửi tin nhắn cho sender
-      socket.emit("new-message", {
+      const messageData = {
         ...chatMessage,
+        senderId: chatMessage.sender_id,
+        receiverId: chatMessage.receiver_id,
         senderName: senderName,
         timestamp: timestamp,
-      });
+      };
 
-      console.log(`💬 Message from ${senderName} to ${finalReceiverId}: ${message.substring(0, 30)}...`);
+      // Gửi tin nhắn cho receiver (real-time)
+      const receiverSocketId = userSockets[finalReceiverId];
+      console.log(`🔍 Looking for receiver ${finalReceiverId} socket: ${receiverSocketId ? 'FOUND' : 'NOT FOUND'}`);
+      if (receiverSocketId) {
+        io.to(receiverSocketId).emit("new-message", messageData);
+        console.log(`📤 Sent new-message to receiver ${finalReceiverId} (socketId: ${receiverSocketId})`);
+      } else {
+        console.log(`⚠️ Receiver ${finalReceiverId} not connected`);
+      }
+
+      // Gửi tin nhắn cho sender (confirmation)
+      socket.emit("new-message", messageData);
+      console.log(`📤 Sent new-message confirmation to sender ${senderId}`);
+
+      // Nếu user gửi tin nhắn cho admin, cập nhật conversation list của admin
+      const admin = await db.getUserByUsername("admin");
+      if (admin && senderId !== admin.id) {
+        // User gửi cho admin, cập nhật conversation list của admin
+        const adminSocketId = userSockets[admin.id];
+        if (adminSocketId) {
+          const conversations = await db.getConversationList(admin.id);
+          io.to(adminSocketId).emit("conversation-list", { conversations });
+          console.log(`📋 Auto-updated conversation list for admin (${conversations.length} conversations)`);
+        }
+      }
+
+      console.log(`✅ Message delivered successfully`);
     } catch (error) {
       console.error("Send message error:", error.message);
     }
@@ -1034,6 +1055,11 @@ io.on("connection", (socket) => {
     if (!adminId) return;
 
     try {
+      // Đăng ký admin vào userSockets để nhận tin nhắn real-time
+      currentUserId = adminId;
+      userSockets[adminId] = socket.id;
+      console.log(`👨‍💼 Admin ${adminId} registered in userSockets (socketId: ${socket.id})`);
+      
       const conversations = await db.getConversationList(adminId);
       socket.emit("conversation-list", { conversations });
       console.log(`📋 Admin ${adminId} requested conversations: ${conversations.length}`);
@@ -1048,6 +1074,13 @@ io.on("connection", (socket) => {
     if (!userId || !adminId) return;
 
     try {
+      // Đăng ký admin vào userSockets nếu chưa có
+      if (!userSockets[adminId]) {
+        currentUserId = adminId;
+        userSockets[adminId] = socket.id;
+        console.log(`👨‍💼 Admin ${adminId} registered in userSockets (socketId: ${socket.id})`);
+      }
+      
       currentConversationId = userId;
       const messages = await db.getConversation(userId, adminId);
       console.log(`📨 DB getConversation returned ${messages ? messages.length : 0} messages`);

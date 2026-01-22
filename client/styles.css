@@ -921,6 +921,41 @@ footer p {
    CHAT WIDGET
    ============================================ */
 
+/* Admin Chat Messages Container */
+#admin-chat-messages {
+  background: #ffffff !important;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 15px !important;
+  overflow-y: scroll !important;
+  overflow-x: hidden !important;
+}
+
+/* Scrollbar cho admin chat messages */
+#admin-chat-messages::-webkit-scrollbar {
+  width: 8px;
+}
+
+#admin-chat-messages::-webkit-scrollbar-track {
+  background: rgba(0,0,0,0.05);
+  border-radius: 4px;
+}
+
+#admin-chat-messages::-webkit-scrollbar-thumb {
+  background: rgba(0,0,0,0.2);
+  border-radius: 4px;
+}
+
+#admin-chat-messages::-webkit-scrollbar-thumb:hover {
+  background: rgba(0,0,0,0.3);
+}
+
+/* Conversations List */
+#admin-conversations-list {
+  background: #ffffff !important;
+}
+
 #chat-widget {
   position: fixed;
   bottom: 20px;
@@ -947,8 +982,12 @@ footer p {
 }
 
 #chat-window {
+  position: absolute;
+  bottom: 70px;
+  right: 0;
   width: 350px;
-  height: 450px;
+  height: 500px;
+  max-height: 500px;
   background: var(--card-bg);
   border-radius: var(--border-radius);
   box-shadow: 0 5px 15px rgba(0,0,0,0.4);
@@ -964,6 +1003,7 @@ footer p {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  flex-shrink: 0;
 }
 
 #close-chat {
@@ -975,30 +1015,75 @@ footer p {
 }
 
 #chat-messages {
-  flex-grow: 1;
+  flex: 1 1 auto;
+  min-height: 0;
+  max-height: calc(100% - 60px);
   padding: 15px;
-  overflow-y: auto;
+  overflow-y: scroll;
+  overflow-x: hidden;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 10px;
+  background: var(--card-bg);
+}
+
+/* Scrollbar cho chat messages - rõ ràng hơn */
+#chat-messages::-webkit-scrollbar {
+  width: 8px;
+}
+
+#chat-messages::-webkit-scrollbar-track {
+  background: rgba(255,255,255,0.1);
+  border-radius: 4px;
+}
+
+#chat-messages::-webkit-scrollbar-thumb {
+  background: rgba(255,255,255,0.3);
+  border-radius: 4px;
+}
+
+#chat-messages::-webkit-scrollbar-thumb:hover {
+  background: rgba(255,255,255,0.5);
 }
 
 .chat-message {
   padding: 10px 15px;
   border-radius: 15px;
-  max-width: 80%;
+  max-width: 70%;
   line-height: 1.4;
+  word-wrap: break-word;
+  flex-shrink: 0;
 }
 
+/* Tin nhắn của mình (bên phải, màu xanh) */
+.chat-message.my-message {
+  background: #007bff;
+  color: white;
+  align-self: flex-end;
+  margin-left: auto;
+  border-bottom-right-radius: 3px;
+}
+
+/* Tin nhắn của người kia (bên trái, màu trắng/xám) */
+.chat-message.their-message {
+  background: #e9ecef;
+  color: #333;
+  align-self: flex-start;
+  margin-right: auto;
+  border-bottom-left-radius: 3px;
+}
+
+/* Giữ lại class cũ để tương thích */
 .chat-message.sent {
-  background: var(--primary-color);
+  background: #007bff;
   color: white;
   align-self: flex-end;
   border-bottom-right-radius: 3px;
 }
 
 .chat-message.received {
-  background: #3a3a3a;
+  background: #e9ecef;
+  color: #333;
   align-self: flex-start;
   border-bottom-left-radius: 3px;
 }
@@ -1007,6 +1092,9 @@ footer p {
   display: flex;
   padding: 10px;
   border-top: 1px solid rgba(255,255,255,0.1);
+  background: var(--card-bg);
+  flex-shrink: 0;
+  gap: 8px;
 }
 
 #chat-input {
@@ -1023,12 +1111,20 @@ footer p {
 }
 
 #chat-send {
-  background: none;
+  background: var(--primary-color);
   border: none;
-  color: var(--primary-color);
-  font-size: 1.5rem;
+  color: white;
+  font-size: 1rem;
   cursor: pointer;
-  padding: 0 15px;
+  padding: 10px 20px;
+  border-radius: 20px;
+  font-weight: bold;
+  transition: all 0.3s;
+}
+
+#chat-send:hover {
+  background: #c50813;
+  transform: scale(1.05);
 }
 
 #conversation-list li {
@@ -1048,11 +1144,43 @@ footer p {
   cursor: pointer;
   transition: all 0.3s ease;
   border-left: 3px solid #007bff;
+  position: relative;
+}
+
+.conversation-item.has-unread {
+  background: #fff8e1;
+  border-left: 3px solid #ff5722;
+  font-weight: 500;
 }
 
 .conversation-item:hover {
   background: #e8f0ff;
   transform: translateX(5px);
+}
+
+.conversation-item.conversation-active {
+  background: #d4edff;
+  border-left: 3px solid #0056b3;
+  font-weight: bold;
+}
+
+.conversation-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 4px;
+}
+
+.unread-badge {
+  background: #ff3b30;
+  color: white;
+  font-size: 0.7rem;
+  font-weight: bold;
+  padding: 2px 6px;
+  border-radius: 10px;
+  min-width: 18px;
+  text-align: center;
+  display: inline-block;
 }
 
 .conversation-name {
@@ -1078,23 +1206,29 @@ footer p {
 /* ===== CHAT MESSAGE STYLES ===== */
 .chat-message {
   margin-bottom: 12px;
-  padding: 10px;
-  border-radius: 8px;
+  padding: 10px 12px;
+  border-radius: 15px;
   word-wrap: break-word;
+  max-width: 70%;
+  clear: both;
 }
 
+/* Tin nhắn của người đăng nhập (bên phải, màu xanh) */
 .user-message {
   background: #007bff;
   color: white;
-  margin-left: 20px;
+  margin-left: auto;
   text-align: right;
+  border-bottom-right-radius: 3px;
 }
 
+/* Tin nhắn của người kia (bên trái, màu xám nhạt) */
 .admin-message {
-  background: #e8e8e8;
+  background: #e9ecef;
   color: #333;
-  margin-right: 20px;
+  margin-right: auto;
   text-align: left;
+  border-bottom-left-radius: 3px;
 }
 
 .system-message {
@@ -1102,7 +1236,8 @@ footer p {
   color: #856404;
   text-align: center;
   font-style: italic;
-  margin: 10px 0;
+  margin: 10px auto;
+  max-width: 90%;
 }
 
 .chat-message-header {
@@ -1110,6 +1245,11 @@ footer p {
   margin-bottom: 4px;
   display: flex;
   justify-content: space-between;
+  opacity: 0.9;
+}
+
+.chat-message-body {
+  font-size: 0.95rem;
 }
 
 .chat-time {
